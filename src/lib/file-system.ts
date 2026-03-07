@@ -15,6 +15,11 @@ function getConfigPath(): string {
 }
 
 export async function getDataDirectory(): Promise<string> {
+  // Render: use persistent disk path (set in render.yaml)
+  const envDir = process.env.DATA_DIR;
+  if (envDir?.trim()) {
+    return path.resolve(envDir);
+  }
   try {
     const configPath = getConfigPath();
     const data = await fs.readFile(configPath, "utf-8");

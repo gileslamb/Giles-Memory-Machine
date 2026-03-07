@@ -5,6 +5,8 @@ import Link from "next/link";
 import { ContextDashboard } from "@/components/ContextDashboard";
 import { DashboardErrorBoundary } from "@/components/DashboardErrorBoundary";
 import { CheckInPanel } from "@/components/CheckInPanel";
+import { StatusLine } from "@/components/StatusLine";
+import { AdvisorBar } from "@/components/AdvisorBar";
 import { AppNav } from "@/components/AppNav";
 import { parseContextMarkdown } from "@/lib/parse-context";
 import { PastePanel } from "@/components/PastePanel";
@@ -112,6 +114,9 @@ export default function Home() {
 
   return (
     <div className="min-h-screen flex flex-col">
+      {/* Status line — auto-loads when content exists, refetches when context updates */}
+      <StatusLine hasContent={!!content?.trim()} contentVersion={content.length} />
+
       {/* Header */}
       <header className="border-b border-border px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-6">
@@ -163,6 +168,9 @@ export default function Home() {
           </button>
         </div>
       </header>
+
+      {/* Advisor bar — along top */}
+      <AdvisorBar rawContent={content} />
 
       {/* Main layout */}
       <main className="flex-1 flex flex-col lg:flex-row gap-6 p-6 overflow-hidden min-w-0">
