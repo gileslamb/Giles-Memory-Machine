@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --surface: #0d0d0d;
+  --surface-elevated: #141414;
+  --surface-muted: #1a1a1a;
+  --border: #262626;
+  --ink: #e5e5e5;
+  --ink-muted: #a3a3a3;
+  --ink-faint: #525252;
+  --accent: #737373;
+}
+
+body {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+/* Minimal scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--surface-muted);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-faint);
+}
