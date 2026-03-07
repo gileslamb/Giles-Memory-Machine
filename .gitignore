@@ -14,6 +14,9 @@
 # Production
 /build
 
+# Data (created automatically on first run)
+/data
+
 # Misc
 .DS_Store
 *.pem
