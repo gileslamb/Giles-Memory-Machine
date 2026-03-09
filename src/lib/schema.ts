@@ -6,6 +6,7 @@ export const LAYERS = {
   PROJECTS: "PROJECTS",
   ADMIN: "ADMIN",
   VISION_IDEAS: "VISION / IDEAS",
+  LIFE: "LIFE",
 } as const;
 
 export const CATEGORIES = {
@@ -31,6 +32,13 @@ export const CATEGORIES = {
     "Research & references",
     "Business & practice strategy",
     "Notes from conversations / reading",
+  ],
+  [LAYERS.LIFE]: [
+    "Health & energy",
+    "Personal reflections",
+    "Habits & routines",
+    "Family",
+    "Personal goals",
   ],
 } as const;
 
@@ -59,4 +67,11 @@ The content must be routed into one of three LAYERS, each with specific CATEGORI
 - Research & references
 - Business & practice strategy
 - Notes from conversations / reading
+
+## LIFE
+- Health & energy
+- Personal reflections
+- Habits & routines
+- Family
+- Personal goals
 `.trim();

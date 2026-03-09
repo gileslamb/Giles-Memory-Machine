@@ -6,6 +6,15 @@ const MASTER_FILE = "AI_CONTEXT.md";
 const CHECKINS_FILE = "CHECKINS.md";
 const ARCHIVE_FOLDER = "archive";
 
+export const DOMAIN_FILES = {
+  projects: "projects_context.md",
+  admin: "admin_context.md",
+  vision: "vision_context.md",
+  life: "life_context.md",
+} as const;
+
+export type DomainKey = keyof typeof DOMAIN_FILES;
+
 export interface ContextConfig {
   dataDirectory: string;
 }
@@ -136,6 +145,37 @@ export async function appendTodosToContext(
   await writeMasterFile(newContent);
 }
 
+/**
+ * Extract layer section from master content (e.g. ## PROJECTS ... ## ADMIN)
+ */
+function extractLayerSection(content: string, layerHeader: string, nextHeader: string | null): string {
+  const start = content.indexOf(layerHeader);
+  if (start < 0) return "";
+  const searchFrom = start + layerHeader.length;
+  const end = nextHeader ? content.indexOf(nextHeader, searchFrom) : content.length;
+  return content.slice(start, end >= 0 ? end : content.length).trim();
+}
+
+/**
+ * Write domain files from master content. Used after inbox merge.
+ */
+export async function writeDomainFilesFromMaster(masterContent: string): Promise<void> {
+  const dir = await ensureDataDirectory();
+  const layers: { key: DomainKey; header: string; next: string | null }[] = [
+    { key: "projects", header: "## PROJECTS", next: "## ADMIN" },
+    { key: "admin", header: "## ADMIN", next: "## VISION / IDEAS" },
+    { key: "vision", header: "## VISION / IDEAS", next: "## LIFE" },
+    { key: "life", header: "## LIFE", next: null },
+  ];
+  for (const { key, header, next } of layers) {
+    const section = extractLayerSection(masterContent, header, next);
+    if (section) {
+      const filePath = path.join(dir, DOMAIN_FILES[key]);
+      await fs.writeFile(filePath, `# ${header.replace("## ", "")}\n\n${section}\n`, "utf-8");
+    }
+  }
+}
+
 function getEmptyContext(): string {
   return `# AI Context
 
@@ -172,6 +212,16 @@ function getEmptyContext(): string {
 ### Research & references
 ### Business & practice strategy
 ### Notes from conversations / reading
+
+---
+
+## LIFE
+
+### Health & energy
+### Personal reflections
+### Habits & routines
+### Family
+### Personal goals
 
 `;
 }

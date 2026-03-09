@@ -6,10 +6,12 @@ import {
   type ParsedTodo,
 } from "@/lib/parse-todos";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const includeArchived = searchParams.get("includeArchived") === "true";
     const content = await readMasterFile();
-    const todos = parseTodosSection(content, { includeArchivedDone: false });
+    const todos = parseTodosSection(content, { includeArchivedDone: includeArchived });
     return NextResponse.json({ todos });
   } catch (error) {
     console.error("Failed to read todos:", error);

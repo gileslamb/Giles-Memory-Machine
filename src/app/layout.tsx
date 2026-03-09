@@ -1,5 +1,11 @@
 import type { Metadata } from "next";
+import { DM_Sans } from "next/font/google";
 import "./globals.css";
+
+const dmSans = DM_Sans({
+  subsets: ["latin"],
+  variable: "--font-dm-sans",
+});
 
 export const metadata: Metadata = {
   title: "Giles Memory Machine",
@@ -14,8 +20,8 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <body
-        className="font-sans antialiased min-h-screen bg-surface text-ink"
-        style={{ backgroundColor: "#0d0d0d", color: "#e5e5e5" }}
+        className={`${dmSans.variable} font-sans antialiased min-h-screen`}
+        style={{ backgroundColor: "#0a0a0a", color: "#e8e8e8" }}
       >
         {children}
       </body>
