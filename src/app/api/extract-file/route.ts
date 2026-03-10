@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { generateWithImage } from "@/lib/ai-client";
 import { PDFParse } from "pdf-parse";
 
 export async function POST(request: Request) {
@@ -27,47 +27,24 @@ export async function POST(request: Request) {
     }
 
     if (["png", "jpg", "jpeg", "webp", "gif"].includes(ext ?? "")) {
-      const apiKey = process.env.ANTHROPIC_API_KEY;
-      if (!apiKey) {
-        return NextResponse.json(
-          { error: "ANTHROPIC_API_KEY not configured for image extraction" },
-          { status: 500 }
-        );
-      }
       const buffer = await file.arrayBuffer();
       const base64 = Buffer.from(buffer).toString("base64");
       const mediaType = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
 
-      const anthropic = new Anthropic({ apiKey });
-      const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 2048,
+      const { text } = await generateWithImage({
+        system: "Extract all text from images. Output plain text only.",
         messages: [
           {
             role: "user",
-            content: [
-              {
-                type: "image",
-                source: {
-                  type: "base64",
-                  media_type: mediaType,
-                  data: base64,
-                },
-              },
-              {
-                type: "text",
-                text: "Extract all text visible in this image. If it's a screenshot, document, or diagram, transcribe everything you can read. If it's a photo or visual with no text, describe the image concisely (what it shows, any relevant context). Output plain text only.",
-              },
-            ],
+            content:
+              "Extract all text visible in this image. If it's a screenshot, document, or diagram, transcribe everything you can read. If it's a photo or visual with no text, describe the image concisely (what it shows, any relevant context). Output plain text only.",
           },
         ],
+        imageBase64: base64,
+        imageMediaType: mediaType,
       });
 
-      const textBlock = response.content.find(
-        (b): b is { type: "text"; text: string } => b.type === "text"
-      );
-      const text = textBlock?.text?.trim() ?? "(Could not extract from image)";
-      return NextResponse.json({ text });
+      return NextResponse.json({ text: text.trim() || "(Could not extract from image)" });
     }
 
     return NextResponse.json(

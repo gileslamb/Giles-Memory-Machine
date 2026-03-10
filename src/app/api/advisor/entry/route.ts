@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { generate } from "@/lib/ai-client";
 import { readMasterFile } from "@/lib/file-system";
 
 const ENTRY_COACH_PROMPT = `You are a direct, practical coach. Given the full context of a single entry from the user's AI context file, write a 2-3 sentence note focused entirely on that entry. Cover: current status, what needs to happen next, any flags or urgent items. Be specific and actionable. No fluff. Warm but direct.`;
@@ -44,14 +44,6 @@ function extractEntryContent(content: string, layerName: string, entryName: stri
 
 export async function POST(request: Request) {
   try {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: "ANTHROPIC_API_KEY not configured" },
-        { status: 500 }
-      );
-    }
-
     const { layer, entryName } = await request.json();
     if (!layer || !entryName) {
       return NextResponse.json(
@@ -69,10 +61,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const anthropic = new Anthropic({ apiKey });
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 256,
+    const { text } = await generate({
       system: ENTRY_COACH_PROMPT,
       messages: [
         {
@@ -80,19 +69,10 @@ export async function POST(request: Request) {
           content: `Entry: ${entryName}\n\n${entryContent}`,
         },
       ],
+      maxTokens: 256,
     });
 
-    const textBlock = response.content.find(
-      (b): b is { type: "text"; text: string } => b.type === "text"
-    );
-    if (!textBlock) {
-      return NextResponse.json(
-        { error: "Claude did not return text" },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({ reply: textBlock.text.trim() });
+    return NextResponse.json({ reply: text.trim() });
   } catch (error) {
     console.error("Entry coach failed:", error);
     return NextResponse.json(

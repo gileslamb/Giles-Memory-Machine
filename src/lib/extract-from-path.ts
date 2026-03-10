@@ -121,38 +121,27 @@ function formatAsTable(rows: string[][]): string {
 }
 
 async function extractFromImage(filePath: string, ext: string): Promise<string> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return "(ANTHROPIC_API_KEY not configured for image extraction)";
-
-  const Anthropic = (await import("@anthropic-ai/sdk")).default;
+  const { generateWithImage } = await import("@/lib/ai-client");
   const buffer = await fs.readFile(filePath);
   const base64 = buffer.toString("base64");
   const mediaType =
     ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
 
-  const anthropic = new Anthropic({ apiKey });
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 2048,
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "image",
-            source: { type: "base64", media_type: mediaType, data: base64 },
-          },
-          {
-            type: "text",
-            text: "Extract all text visible in this image. If it's a screenshot, document, or diagram, transcribe everything you can read. If it's a photo with no text, describe it concisely. Output plain text only.",
-          },
-        ],
-      },
-    ],
-  });
-
-  const textBlock = response.content.find(
-    (b): b is { type: "text"; text: string } => b.type === "text"
-  );
-  return textBlock?.text?.trim() ?? "(Could not extract from image)";
+  try {
+    const { text } = await generateWithImage({
+      system: "Extract all text from images. Output plain text only.",
+      messages: [
+        {
+          role: "user",
+          content:
+            "Extract all text visible in this image. If it's a screenshot, document, or diagram, transcribe everything you can read. If it's a photo with no text, describe it concisely. Output plain text only.",
+        },
+      ],
+      imageBase64: base64,
+      imageMediaType: mediaType,
+    });
+    return text?.trim() ?? "(Could not extract from image)";
+  } catch {
+    return "(Could not extract from image)";
+  }
 }

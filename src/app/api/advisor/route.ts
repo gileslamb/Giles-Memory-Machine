@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { generate } from "@/lib/ai-client";
 import { readMasterFile } from "@/lib/file-system";
 import { parseContextMarkdown } from "@/lib/parse-context";
 
@@ -21,9 +21,6 @@ You can also suggest what to add to the context — e.g. "You might add an updat
 const STATUS_PROMPT = `Give a one-line status verdict based on the context. Format: ✅ [one thing going well] · 👀 [one thing neglected] · 🎯 [brief verdict]. Keep it under 120 chars. Warm but direct.`;
 
 async function getAdvisorResponse(systemPrompt: string, userMessage: string) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return null;
-
   const context = await readMasterFile();
   const parsed = parseContextMarkdown(context);
   const staleEntries = parsed.layers.flatMap((l) =>
@@ -38,18 +35,16 @@ ${context}
 
 STALE ENTRIES (15+ days no update): ${staleEntries.length ? staleEntries.join(", ") : "none"}`;
 
-  const anthropic = new Anthropic({ apiKey });
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 256,
-    system: fullSystem,
-    messages: [{ role: "user", content: userMessage }],
-  });
-
-  const textBlock = response.content.find(
-    (b): b is { type: "text"; text: string } => b.type === "text"
-  );
-  return textBlock?.text.trim() ?? null;
+  try {
+    const { text } = await generate({
+      system: fullSystem,
+      messages: [{ role: "user", content: userMessage }],
+      maxTokens: 256,
+    });
+    return text.trim() || null;
+  } catch {
+    return null;
+  }
 }
 
 export async function GET() {
@@ -67,14 +62,6 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: "ANTHROPIC_API_KEY not configured" },
-        { status: 500 }
-      );
-    }
-
     const { messages } = await request.json();
     if (!Array.isArray(messages)) {
       return NextResponse.json(
@@ -97,30 +84,18 @@ ${context}
 
 STALE ENTRIES (15+ days no update): ${staleEntries.length ? staleEntries.join(", ") : "none"}`;
 
-    const anthropic = new Anthropic({ apiKey });
     const apiMessages = messages.map((m: { role: string; content: string }) => ({
       role: m.role as "user" | "assistant",
       content: m.content,
     }));
 
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 4096,
+    const { text } = await generate({
       system: systemPrompt,
       messages: apiMessages,
+      maxTokens: 1024,
     });
 
-    const textBlock = response.content.find(
-      (b): b is { type: "text"; text: string } => b.type === "text"
-    );
-    if (!textBlock) {
-      return NextResponse.json(
-        { error: "Claude did not return text" },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({ reply: textBlock.text.trim() });
+    return NextResponse.json({ reply: text.trim() });
   } catch (error) {
     console.error("Advisor failed:", error);
     return NextResponse.json(

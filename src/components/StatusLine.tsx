@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { apiUrl } from "@/lib/api";
 
 interface StatusLineProps {
   hasContent: boolean;
@@ -19,7 +20,7 @@ export function StatusLine({ hasContent, contentVersion = 0 }: StatusLineProps) 
     }
     setIsLoading(true);
     let cancelled = false;
-    fetch("/api/advisor")
+    fetch(apiUrl("/api/advisor"))
       .then((r) => r.json())
       .then((d) => {
         if (!cancelled && d.status) setStatus(d.status);

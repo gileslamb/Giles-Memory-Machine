@@ -1,8 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
+import { apiUrl } from "@/lib/api";
 
-const PARAGRAPH_PROMPT = `Give me a 3-4 sentence morning brief. Cover: one creative observation (what's moving, what has momentum), one admin flag (what needs attention), one personal note (energy, life, health from the Life layer), and one specific action to take today. Format as 2-3 short paragraphs separated by blank lines. Warm and direct.`;
+const PARAGRAPH_PROMPT = `Give me a 3-4 sentence morning brief. Format with these exact section labels on their own line:
+Creative: [one observation — what's moving, what has momentum]
+Admin: [one flag — what needs attention]
+Today: [personal note + one specific action — energy, life, health from the Life layer]
+Use 2-3 short paragraphs. Warm and direct.`;
 
 const EXPANDED_PROMPT = `Give me the full status: full signals analysis, all open todos with staleness, detailed project status across all layers, and strategic observations. Format with clear sections or bullet points. Use short paragraphs to separate ideas.`;
 
@@ -34,7 +39,7 @@ export function CoachZone({ hasContent, contentVersion, compact, entryContext, t
     let cancelled = false;
     setEntryCoachLoading(true);
     setEntryCoach(null);
-    fetch("/api/advisor/entry", {
+    fetch(apiUrl("/api/advisor/entry"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ layer: entryContext.layer, entryName: entryContext.entryName }),
@@ -63,7 +68,7 @@ export function CoachZone({ hasContent, contentVersion, compact, entryContext, t
     }
     let cancelled = false;
     setIsLoading(true);
-    fetch("/api/advisor", {
+    fetch(apiUrl("/api/advisor"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -93,7 +98,7 @@ export function CoachZone({ hasContent, contentVersion, compact, entryContext, t
       return;
     }
     setIsLoadingExpanded(true);
-    fetch("/api/advisor", {
+    fetch(apiUrl("/api/advisor"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -113,6 +118,36 @@ export function CoachZone({ hasContent, contentVersion, compact, entryContext, t
 
   if (!hasContent && !entryContext && !todosContext) return null;
 
+  const LAYER_COLORS: Record<string, string> = {
+    Creative: "#4af0c8",
+    Admin: "#f0a84a",
+    Today: "#f04a7a",
+  };
+
+  function renderCoachText(text: string) {
+    const parts: React.ReactNode[] = [];
+    const lines = text.split("\n");
+    let key = 0;
+    for (const line of lines) {
+      const match = line.match(/^(Creative:|Admin:|Today:)\s*(.*)$/i);
+      if (match) {
+        const [, label, rest] = match;
+        const color = LAYER_COLORS[label as keyof typeof LAYER_COLORS] ?? "#e8e8e8";
+        parts.push(
+          <p key={key++} className="mb-2">
+            <span className="font-bold" style={{ color, fontSize: "1.05em" }}>{label} </span>
+            <span>{rest}</span>
+          </p>
+        );
+      } else if (line.trim()) {
+        parts.push(<p key={key++}>{line.trim()}</p>);
+      } else {
+        parts.push(<div key={key++} className="h-2" />);
+      }
+    }
+    return parts;
+  }
+
   if (todosContext) {
     const { openCount, overdueCount, overdueNames, firstOverdue } = todosContext;
     const overdueList = overdueNames.slice(0, 3).join(", ");
@@ -122,13 +157,14 @@ export function CoachZone({ hasContent, contentVersion, compact, entryContext, t
         : `You have ${openCount} open todos. None overdue.`;
     return (
       <div
-        className="px-6 py-4 border-b"
+        className="border-b"
         style={{
           backgroundColor: "#0f0f0f",
-          borderColor: "#1e1e1e",
+          borderColor: "#1a1a1a",
+          padding: "24px 48px",
         }}
       >
-        <p className="text-[#e8e8e8] text-sm leading-relaxed">{note}</p>
+        <p style={{ color: "#f0ede8", fontSize: 16, lineHeight: 1.7 }}>{note}</p>
       </div>
     );
   }
@@ -136,16 +172,17 @@ export function CoachZone({ hasContent, contentVersion, compact, entryContext, t
   if (entryContext) {
     return (
       <div
-        className="px-6 py-4 border-b"
+        className="border-b"
         style={{
           backgroundColor: "#0f0f0f",
-          borderColor: "#1e1e1e",
+          borderColor: "#1a1a1a",
+          padding: "24px 48px",
         }}
       >
         {entryCoachLoading ? (
-          <span className="text-sm text-[#a3a3a3] animate-pulse">thinking…</span>
+          <span className="text-[#a3a3a3] animate-pulse" style={{ fontSize: 16 }}>thinking…</span>
         ) : entryCoach ? (
-          <p className="text-[#e8e8e8] text-sm leading-relaxed">{entryCoach}</p>
+          <div style={{ color: "#f0ede8", fontSize: 16, lineHeight: 1.7 }}>{entryCoach}</div>
         ) : null}
       </div>
     );
@@ -153,20 +190,20 @@ export function CoachZone({ hasContent, contentVersion, compact, entryContext, t
 
   return (
     <div
-      className={`px-6 py-4 border-b ${compact ? "py-3" : "py-4"}`}
+      className={`border-b ${compact ? "py-3" : "py-4"}`}
       style={{
         backgroundColor: "#0f0f0f",
-        borderColor: "#1e1e1e",
+        borderColor: "#1a1a1a",
+        paddingLeft: 48,
+        paddingRight: 48,
       }}
     >
       {isLoading ? (
-        <span className="text-sm text-[#a3a3a3] animate-pulse">Loading…</span>
+        <span className="text-[#a3a3a3] animate-pulse" style={{ fontSize: 16 }}>Loading…</span>
       ) : paragraph ? (
         <>
-          <div className="text-[#e8e8e8] text-sm leading-relaxed space-y-3">
-            {paragraph.split(/\n\n+/).filter(Boolean).map((para, i) => (
-              <p key={i}>{para.trim()}</p>
-            ))}
+          <div style={{ color: "#f0ede8", fontSize: 16, lineHeight: 1.7 }}>
+            {renderCoachText(paragraph)}
           </div>
           <button
             type="button"
@@ -182,8 +219,8 @@ export function CoachZone({ hasContent, contentVersion, compact, entryContext, t
           </button>
           {isExpanded && expanded && (
             <div
-              className="mt-4 pt-4 border-t text-sm text-[#a3a3a3] leading-relaxed space-y-3"
-              style={{ borderColor: "rgba(255,255,255,0.08)" }}
+              className="mt-4 pt-4 border-t space-y-3"
+              style={{ borderColor: "#1a1a1a", color: "#a3a3a3", fontSize: 16, lineHeight: 1.7 }}
             >
               {expanded.split(/\n\n+/).filter(Boolean).map((para, i) => (
                 <p key={i} className="whitespace-pre-wrap">{para.trim()}</p>

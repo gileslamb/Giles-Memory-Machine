@@ -2,7 +2,7 @@
  * Utilities for extracting and modifying individual entries in AI_CONTEXT.md.
  */
 
-const LAYER_HEADERS = ["## PROJECTS", "## ADMIN", "## VISION / IDEAS"] as const;
+const LAYER_HEADERS = ["## PROJECTS", "## ADMIN", "## VISION / IDEAS", "## LIFE"] as const;
 
 const EDITED_REGEX = /\s*\*edited at [^*]+\*\s*\n?/g;
 

@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { readInboxStatus } from "@/lib/inbox-status";
 import { countFilesWaiting } from "@/lib/inbox-processor";
+import { startInboxWatcher } from "@/lib/inbox-watcher";
 
 export async function GET() {
   try {
+    // Start watcher on first request (instrumentation may not run in prod)
+    await startInboxWatcher();
     const [status, waiting] = await Promise.all([
       readInboxStatus(),
       countFilesWaiting(),

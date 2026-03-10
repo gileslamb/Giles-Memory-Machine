@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { generate } from "@/lib/ai-client";
 import {
   readMasterFile,
   readCheckinsFile,
   appendToCheckins,
-  appendTodosToContext,
 } from "@/lib/file-system";
 import { parseContextMarkdown } from "@/lib/parse-context";
 
@@ -28,15 +27,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: "ANTHROPIC_API_KEY not configured" },
-        { status: 500 }
-      );
-    }
-
-    const { messages, greetingContext } = await request.json();
+    const { messages } = await request.json();
     if (!Array.isArray(messages)) {
       return NextResponse.json(
         { error: "messages must be an array" },
@@ -101,7 +92,6 @@ ${checkins.slice(-2000)}
 
     const fullSystemPrompt = systemPrompt + contextBlock;
 
-    const anthropic = new Anthropic({ apiKey });
     const apiMessages: { role: "user" | "assistant"; content: string }[] =
       messages.length > 0
         ? messages.map((m: { role: string; content: string }) => ({
@@ -116,24 +106,13 @@ ${checkins.slice(-2000)}
             },
           ];
 
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 4096,
+    const { text } = await generate({
       system: fullSystemPrompt,
       messages: apiMessages,
+      maxTokens: 4096,
     });
 
-    const textBlock = response.content.find(
-      (b): b is { type: "text"; text: string } => b.type === "text"
-    );
-    if (!textBlock) {
-      return NextResponse.json(
-        { error: "Claude did not return text" },
-        { status: 500 }
-      );
-    }
-
-    let reply = textBlock.text.trim();
+    let reply = text.trim();
     const actionsMatch = reply.match(/```ACTIONS\s*([\s\S]*?)```/);
     let pendingReview: { contextUpdates?: string; todos?: unknown[] } | null = null;
 

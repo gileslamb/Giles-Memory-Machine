@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { generate } from "@/lib/ai-client";
 import { readMasterFile, writeMasterFile } from "@/lib/file-system";
 import { SCHEMA_PROMPT } from "@/lib/schema";
 
@@ -15,20 +15,12 @@ MERGE RULES (critical):
 3. Add "Last updated: [ISO date]" to any section that changes — ALWAYS use today's date (${today}). Never inherit dates from the pasted content; the source may be old but the context entry is new.
 4. Keep the file clean, readable, and concise — summarise rather than dump raw text
 5. Structure each project/area entry: what it is, current status, key people, next steps, decisions made
-6. Preserve the three-layer structure (PROJECTS, ADMIN, VISION / IDEAS) and their category headings
+6. Preserve the four-layer structure (PROJECTS, ADMIN, VISION / IDEAS, LIFE) and their category headings
 7. Output ONLY the complete merged markdown file — no preamble, no explanation`;
 }
 
 export async function POST(request: Request) {
   try {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: "ANTHROPIC_API_KEY not configured. Add it to .env.local" },
-        { status: 500 }
-      );
-    }
-
     const { pastedContent } = await request.json();
     if (typeof pastedContent !== "string" || !pastedContent.trim()) {
       return NextResponse.json(
@@ -39,16 +31,7 @@ export async function POST(request: Request) {
 
     const currentContext = await readMasterFile();
 
-    const anthropic = new Anthropic({ apiKey });
-
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 8192,
-      system: getMergeSystemPrompt(),
-      messages: [
-        {
-          role: "user",
-          content: `Current AI_CONTEXT.md content:
+    const userContent = `Current AI_CONTEXT.md content:
 
 \`\`\`markdown
 ${currentContext}
@@ -60,29 +43,20 @@ User pasted the following. Read it, identify which layer and category it belongs
 
 \`\`\`
 ${pastedContent}
-\`\`\``,
-        },
-      ],
+\`\`\``;
+
+    const { text } = await generate({
+      system: getMergeSystemPrompt(),
+      messages: [{ role: "user", content: userContent }],
+      maxTokens: 8192,
     });
 
-    const textBlock = response.content.find(
-      (block): block is { type: "text"; text: string } => block.type === "text"
-    );
-    if (!textBlock) {
-      return NextResponse.json(
-        { error: "Claude did not return text" },
-        { status: 500 }
-      );
-    }
-
-    // Extract markdown from response (handle code blocks if Claude wrapped it)
-    let mergedContent = textBlock.text.trim();
+    let mergedContent = text.trim();
     const codeMatch = mergedContent.match(/```(?:markdown)?\s*([\s\S]*?)```/);
     if (codeMatch) {
       mergedContent = codeMatch[1].trim();
     }
 
-    // Always use today's date for Last updated — never inherit from pasted content
     const today = new Date().toISOString().slice(0, 10);
     mergedContent = mergedContent.replace(
       /\*?Last updated:\s*\d{4}-\d{2}-\d{2}\*?/gi,
@@ -92,6 +66,23 @@ ${pastedContent}
       /Last updated:\s*\d{4}-\d{2}-\d{2}/gi,
       `Last updated: ${today}`
     );
+
+    // Safeguard: reject if output is suspiciously short (likely overwrite bug)
+    const hasProjects = /##\s*PROJECTS/i.test(mergedContent);
+    const hasAdmin = /##\s*ADMIN/i.test(mergedContent);
+    const hasVision = /##\s*VISION\s*\/?\s*IDEAS/i.test(mergedContent);
+    const hasLife = /##\s*LIFE/i.test(mergedContent);
+    const hasAllHeaders = hasProjects && hasAdmin && hasVision && hasLife;
+    const minLength = Math.floor((currentContext?.length ?? 0) * 0.25);
+    if (!hasAllHeaders || mergedContent.length < minLength) {
+      return NextResponse.json(
+        {
+          error:
+            "Merge output invalid — key sections missing or content too short. Try again or use Paste.",
+        },
+        { status: 500 }
+      );
+    }
 
     await writeMasterFile(mergedContent);
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { apiUrl } from "@/lib/api";
 import {
   formatRelativeDate,
   formatUpdatedAgo,
@@ -45,7 +46,7 @@ export function EntryDetailView({
     setContentLoading(true);
     try {
       const res = await fetch(
-        `/api/context/entry?layer=${encodeURIComponent(layer.name)}&name=${encodeURIComponent(entry.name)}`
+        apiUrl(`/api/context/entry?layer=${encodeURIComponent(layer.name)}&name=${encodeURIComponent(entry.name)}`)
       );
       if (res.ok) {
         const { content } = await res.json();
@@ -69,7 +70,7 @@ export function EntryDetailView({
     if (editValue === fullContent || isSaving) return;
     setIsSaving(true);
     try {
-      const res = await fetch("/api/context/entry", {
+      const res = await fetch(apiUrl("/api/context/entry"), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

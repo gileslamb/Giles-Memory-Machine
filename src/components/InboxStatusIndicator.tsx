@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { apiUrl } from "@/lib/api";
 
 interface InboxStatus {
   filesWaiting: number;
@@ -10,25 +11,15 @@ interface InboxStatus {
   lastErrorAt: string | null;
 }
 
-function formatWhen(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  const now = Date.now();
-  const diff = now - d.getTime();
-  if (diff < 60000) return "just now";
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-  return d.toLocaleDateString();
-}
-
 export function InboxStatusIndicator() {
   const [status, setStatus] = useState<InboxStatus | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     async function fetchStatus() {
+      if (document.visibilityState !== "visible") return;
       try {
-        const res = await fetch("/api/inbox-status");
+        const res = await fetch(apiUrl("/api/inbox-status"), { cache: "no-store" });
         const data = await res.json();
         if (!cancelled) setStatus(data);
       } catch {
@@ -36,23 +27,25 @@ export function InboxStatusIndicator() {
       }
     }
     fetchStatus();
-    const interval = setInterval(fetchStatus, 10000);
+    const interval = setInterval(fetchStatus, 30000);
+    const onVisible = () => fetchStatus();
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
       clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);
 
   if (!status) return null;
 
+  if (status.filesWaiting === 0 && !status.lastError) return null;
+
   return (
     <div className="flex items-center gap-4 text-xs text-ink-muted">
-      <span title="Files waiting in MEMORY_INBOX">
-        Inbox: {status.filesWaiting} waiting
-      </span>
-      {status.lastProcessedFile && (
-        <span title={`Last: ${status.lastProcessedFile}`}>
-          Last: {status.lastProcessedFile} · {formatWhen(status.lastProcessedAt)}
+      {status.filesWaiting > 0 && (
+        <span title="Files waiting in MEMORY_INBOX">
+          Inbox: {status.filesWaiting} waiting
         </span>
       )}
       {status.lastError && (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { apiUrl } from "@/lib/api";
 
 interface Message {
   role: "user" | "assistant";
@@ -41,7 +42,7 @@ export function AdvisorChatPanel({ rawContent }: AdvisorChatPanelProps) {
         role: m.role,
         content: m.content,
       }));
-      const res = await fetch("/api/advisor", {
+      const res = await fetch(apiUrl("/api/advisor"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: apiMessages }),

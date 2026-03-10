@@ -121,12 +121,12 @@ export function LeftPanel({
               <button
                 type="button"
                 onClick={() => onSectionClick(key)}
-                className="w-full px-4 py-1.5 text-left text-sm font-medium"
-                style={{ color }}
+                className="w-full px-4 py-2 text-left text-sm font-semibold"
+                style={{ color, letterSpacing: "0.08em" }}
               >
                 {label}
               </button>
-              <div className="mt-1 space-y-0.5">
+              <div className="mt-1 flex flex-col" style={{ gap: 6 }}>
                 {items.length > 0 ? (
                   items.map((entry) => {
                     const isActive =
@@ -136,16 +136,16 @@ export function LeftPanel({
                         key={entry.name}
                         type="button"
                         onClick={() => onEntryClick(key, entry.name)}
-                        className={`w-full px-4 py-1.5 text-left text-sm truncate ${
-                          isActive ? "text-[#e8e8e8]" : "text-[#a3a3a3] hover:text-[#e8e8e8]"
+                        className={`w-full px-4 py-2 text-left text-sm truncate transition-colors ${
+                          isActive ? "text-[#e8e8e8]" : "text-[#aaaaaa] hover:text-[#e8e8e8]"
                         }`}
                         style={
                           isActive
                             ? {
-                                borderLeft: `3px solid ${color}`,
-                                paddingLeft: "13px",
+                                borderLeft: `2px solid ${color}`,
+                                paddingLeft: 14,
                               }
-                            : { paddingLeft: "16px" }
+                            : { paddingLeft: 16 }
                         }
                       >
                         · {entry.name}
@@ -154,8 +154,8 @@ export function LeftPanel({
                   })
                 ) : (
                   <div
-                    className="px-4 py-1.5 text-sm text-[#525252]"
-                    style={{ paddingLeft: "16px" }}
+                    className="px-4 py-2 text-sm text-[#525252]"
+                    style={{ paddingLeft: 16 }}
                   >
                     · —
                   </div>
@@ -164,8 +164,8 @@ export function LeftPanel({
                   <button
                     type="button"
                     onClick={() => toggleSectionExpand(key)}
-                    className="w-full px-4 py-1.5 text-left text-xs hover:opacity-80"
-                    style={{ color, paddingLeft: "16px" }}
+                    className="w-full px-4 py-2 text-left text-xs hover:opacity-80"
+                    style={{ color, paddingLeft: 16 }}
                   >
                     {isExpanded ? "· less ←" : "· more →"}
                   </button>

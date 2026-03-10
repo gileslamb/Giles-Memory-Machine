@@ -5,6 +5,7 @@ const CONFIG_FILE = "context-config.json";
 const MASTER_FILE = "AI_CONTEXT.md";
 const CHECKINS_FILE = "CHECKINS.md";
 const ARCHIVE_FOLDER = "archive";
+const PRIORITY_OVERRIDES_FILE = "priority-overrides.json";
 
 export const DOMAIN_FILES = {
   projects: "projects_context.md",
@@ -15,8 +16,11 @@ export const DOMAIN_FILES = {
 
 export type DomainKey = keyof typeof DOMAIN_FILES;
 
+export type AIProviderMode = "auto" | "light_local" | "full_local" | "claude";
+
 export interface ContextConfig {
   dataDirectory: string;
+  aiProvider?: AIProviderMode;
 }
 
 function getConfigPath(): string {
@@ -46,7 +50,34 @@ export async function getDataDirectory(): Promise<string> {
 export async function setDataDirectory(dir: string): Promise<void> {
   const resolved = path.resolve(dir);
   const configPath = getConfigPath();
-  const config: ContextConfig = { dataDirectory: resolved };
+  const existing = await getConfig();
+  const config: ContextConfig = { ...existing, dataDirectory: resolved };
+  await fs.mkdir(path.dirname(configPath), { recursive: true });
+  await fs.writeFile(configPath, JSON.stringify(config, null, 2));
+}
+
+async function getConfig(): Promise<ContextConfig> {
+  try {
+    const configPath = getConfigPath();
+    const data = await fs.readFile(configPath, "utf-8");
+    return JSON.parse(data) as ContextConfig;
+  } catch {
+    return { dataDirectory: path.join(process.cwd(), "data") };
+  }
+}
+
+export async function getAIProvider(): Promise<AIProviderMode> {
+  const config = await getConfig();
+  const raw = (config.aiProvider ?? "auto") as string;
+  if (raw === "local") return "full_local";
+  if (["auto", "light_local", "full_local", "claude"].includes(raw)) return raw as AIProviderMode;
+  return "auto";
+}
+
+export async function setAIProvider(mode: AIProviderMode): Promise<void> {
+  const configPath = getConfigPath();
+  const existing = await getConfig();
+  const config: ContextConfig = { ...existing, aiProvider: mode };
   await fs.mkdir(path.dirname(configPath), { recursive: true });
   await fs.writeFile(configPath, JSON.stringify(config, null, 2));
 }
@@ -72,6 +103,27 @@ export async function readMasterFile(): Promise<string> {
     return await fs.readFile(filePath, "utf-8");
   } catch {
     return getEmptyContext();
+  }
+}
+
+/** Read master file content and its last-modified time (for accurate "Last updated" display). */
+export async function readMasterFileWithStats(): Promise<{
+  content: string;
+  lastModified: string | null;
+}> {
+  const dir = await ensureDataDirectory();
+  const filePath = path.join(dir, MASTER_FILE);
+  try {
+    const [content, stat] = await Promise.all([
+      fs.readFile(filePath, "utf-8"),
+      fs.stat(filePath),
+    ]);
+    return {
+      content,
+      lastModified: stat.mtime.toISOString(),
+    };
+  } catch {
+    return { content: getEmptyContext(), lastModified: null };
   }
 }
 
@@ -112,6 +164,37 @@ export async function appendToCheckins(content: string): Promise<void> {
   const timestamp = new Date().toISOString().slice(0, 19).replace("T", " ");
   const block = `\n---\n## ${timestamp}\n\n${content}\n`;
   await fs.writeFile(filePath, existing + block, "utf-8");
+}
+
+export interface PriorityOverrides {
+  projectNames: string[];
+  inactiveProjectNames?: string[];
+}
+
+export async function readPriorityOverrides(): Promise<PriorityOverrides | null> {
+  const dir = await ensureDataDirectory();
+  const filePath = path.join(dir, PRIORITY_OVERRIDES_FILE);
+  try {
+    const data = await fs.readFile(filePath, "utf-8");
+    const parsed = JSON.parse(data) as {
+      projectNames?: string[];
+      inactiveProjectNames?: string[];
+    };
+    const result: PriorityOverrides = {
+      projectNames: Array.isArray(parsed.projectNames) ? parsed.projectNames : [],
+      inactiveProjectNames: Array.isArray(parsed.inactiveProjectNames) ? parsed.inactiveProjectNames : [],
+    };
+    return result;
+  } catch {
+    // File doesn't exist or invalid
+  }
+  return { projectNames: [], inactiveProjectNames: [] };
+}
+
+export async function writePriorityOverrides(overrides: PriorityOverrides): Promise<void> {
+  const dir = await ensureDataDirectory();
+  const filePath = path.join(dir, PRIORITY_OVERRIDES_FILE);
+  await fs.writeFile(filePath, JSON.stringify(overrides, null, 2), "utf-8");
 }
 
 export async function appendTodosToContext(

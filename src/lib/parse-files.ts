@@ -2,6 +2,8 @@
  * Parse uploaded files (Excel, CSV, PDF, images) to plain text for Claude merge.
  */
 
+import { apiUrl } from "./api";
+
 export async function parseFileToText(file: File): Promise<string> {
   const ext = file.name.split(".").pop()?.toLowerCase();
   if (ext === "csv") {
@@ -17,7 +19,7 @@ export async function parseFileToText(file: File): Promise<string> {
   if (ext === "pdf" || ["png", "jpg", "jpeg", "webp", "gif"].includes(ext ?? "")) {
     const formData = new FormData();
     formData.append("file", file);
-    const res = await fetch("/api/extract-file", {
+    const res = await fetch(apiUrl("/api/extract-file"), {
       method: "POST",
       body: formData,
     });

@@ -3,14 +3,15 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { LeftPanel } from "@/components/LeftPanel";
 import { CoachZone } from "@/components/CoachZone";
-import { PieChartsZone } from "@/components/PieChartsZone";
 import { EntryDetailView } from "@/components/EntryDetailView";
 import { SectionView } from "@/components/SectionView";
 import { ChatBox } from "@/components/ChatBox";
-import { InboxStatusIndicator } from "@/components/InboxStatusIndicator";
+import { AIStatusIndicator } from "@/components/AIStatusIndicator";
 import { PastePanel } from "@/components/PastePanel";
 import { TodosView } from "@/components/TodosView";
-import { parseContextMarkdown } from "@/lib/parse-context";
+import { StaleAlert } from "@/components/StaleAlert";
+import { apiUrl } from "@/lib/api";
+import { parseContextMarkdown, formatRelativeDate } from "@/lib/parse-context";
 import type { ParsedEntry, ParsedLayer } from "@/lib/parse-context";
 import type { ParsedTodo } from "@/lib/parse-todos";
 
@@ -18,14 +19,28 @@ type MainViewState = "chat" | "entry" | "section" | "todos";
 
 export default function Home() {
   const [content, setContent] = useState<string>("");
+  const [lastModified, setLastModified] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showPaste, setShowPaste] = useState(false);
   const [settingsInput, setSettingsInput] = useState("");
+  const [aiProvider, setAIProvider] = useState<"auto" | "light_local" | "full_local" | "claude">("auto");
+  const [claudeUsage, setClaudeUsage] = useState<{
+    dailyInputTokens: number;
+    dailyOutputTokens: number;
+    totalInputTokens: number;
+    totalOutputTokens: number;
+    dailyUsd: number;
+    totalUsd: number;
+  } | null>(null);
+  const [claudeUsageLoading, setClaudeUsageLoading] = useState(false);
   const [activeView, setActiveView] = useState<MainViewState>("chat");
   const [activeEntry, setActiveEntry] = useState<{ layer: string; name: string } | null>(null);
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const [todos, setTodos] = useState<ParsedTodo[]>([]);
+  const [dismissedStaleEntry, setDismissedStaleEntry] = useState<string | null>(null);
+  const [newTodoText, setNewTodoText] = useState("");
+  const [isAddingTodo, setIsAddingTodo] = useState(false);
 
   const parsed = useMemo(() => {
     try {
@@ -50,12 +65,18 @@ export default function Home() {
 
   const fetchContent = useCallback(async () => {
     try {
-      const res = await fetch("/api/context");
-      if (!res.ok) throw new Error("Failed to fetch");
-      const { content: c } = await res.json();
+      const res = await fetch(apiUrl("/api/context"), { cache: "no-store" });
+      if (!res.ok) throw new Error("Server error");
+      const { content: c, lastModified: lm } = await res.json();
       setContent(c ?? "");
+      setLastModified(lm ?? null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load context");
+      const msg = e instanceof Error ? e.message : "Failed to load";
+      setError(
+        msg.toLowerCase().includes("fetch") || msg.toLowerCase().includes("network")
+          ? "Can't reach server. Use http://127.0.0.1:3000 and ensure the server is running."
+          : msg
+      );
     }
   }, []);
 
@@ -65,7 +86,7 @@ export default function Home() {
 
   const fetchTodos = useCallback(async () => {
     try {
-      const res = await fetch("/api/context/todos?includeArchived=true");
+      const res = await fetch(apiUrl("/api/context/todos?includeArchived=true"));
       const data = await res.json();
       if (data.todos) setTodos(data.todos);
     } catch {
@@ -74,8 +95,8 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (activeView === "todos") fetchTodos();
-  }, [activeView, fetchTodos]);
+    fetchTodos();
+  }, [fetchTodos]);
 
   const todosContext = useMemo(() => {
     if (activeView !== "todos") return null;
@@ -94,18 +115,31 @@ export default function Home() {
   }, [activeView, todos]);
 
   useEffect(() => {
-    fetch("/api/settings")
-      .then((r) => r.json())
-      .then((d) => setSettingsInput(d.dataDirectory ?? ""))
-      .catch(() => {});
-  }, []);
+    if (showSettings) {
+      fetch(apiUrl("/api/settings"))
+        .then((r) => r.json())
+        .then((d) => {
+          setSettingsInput(d.dataDirectory ?? "");
+          setAIProvider((d.aiProvider === "local" ? "full_local" : d.aiProvider) ?? "auto");
+        })
+        .catch(() => {});
+      setClaudeUsageLoading(true);
+      fetch(apiUrl("/api/claude-usage"))
+        .then((r) => r.json())
+        .then((d) => setClaudeUsage(d))
+        .catch(() => setClaudeUsage(null))
+        .finally(() => setClaudeUsageLoading(false));
+    }
+  }, [showSettings]);
 
   const handleSaveSettings = async () => {
     try {
-      const res = await fetch("/api/settings", {
+      const body: { dataDirectory?: string; aiProvider?: string } = { aiProvider };
+      if (settingsInput.trim()) body.dataDirectory = settingsInput.trim();
+      const res = await fetch(apiUrl("/api/settings"), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dataDirectory: settingsInput.trim() }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error("Failed to save");
       setShowSettings(false);
@@ -147,6 +181,58 @@ export default function Home() {
     setActiveSection(layer);
   };
 
+  const handleAddTodo = useCallback(async () => {
+    const text = newTodoText.trim();
+    if (!text || isAddingTodo) return;
+    setIsAddingTodo(true);
+    try {
+      const res = await fetch(apiUrl("/api/context/todos"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, category: "Projects > General" }),
+      });
+      if (res.ok) {
+        setNewTodoText("");
+        fetchTodos();
+        fetchContent();
+      }
+    } catch {
+      // Could show toast
+    } finally {
+      setIsAddingTodo(false);
+    }
+  }, [newTodoText, isAddingTodo, fetchTodos, fetchContent]);
+
+  const handleTodoToggle = useCallback(
+    async (todo: ParsedTodo) => {
+      const newStatus = todo.status === "done" ? "todo" : "done";
+      const today = new Date().toISOString().slice(0, 10);
+      const updated = todos.map((t) =>
+        t.id === todo.id
+          ? {
+              ...t,
+              status: newStatus as ParsedTodo["status"],
+              dateCompleted: newStatus === "done" ? today : undefined,
+            }
+          : t
+      );
+      try {
+        const res = await fetch(apiUrl("/api/context/todos"), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ todos: updated }),
+        });
+        if (res.ok) {
+          fetchTodos();
+          fetchContent();
+        }
+      } catch {
+        // Could show toast
+      }
+    },
+    [todos, fetchTodos, fetchContent]
+  );
+
   return (
     <div className="min-h-screen flex" style={{ backgroundColor: "#0a0a0a" }}>
       {/* Left panel — fixed */}
@@ -165,18 +251,34 @@ export default function Home() {
       <main className="flex-1 flex flex-col min-h-0 min-w-0">
         {/* Slim header */}
         <header
-          className="shrink-0 px-6 py-3 flex items-center justify-between border-b"
+          className="shrink-0 px-6 py-6 flex items-center justify-between border-b"
           style={{ borderColor: "rgba(255,255,255,0.06)" }}
         >
-          <div className="flex items-center gap-4">
-            <h1 className="text-sm font-medium text-[#e8e8e8]">Giles Memory Machine</h1>
+          <div className="flex items-center gap-6 shrink-0">
+            <img
+              src="/logo.png?v=2"
+              alt="Giles Memory Machine"
+              style={{ height: 200, width: "auto", flexShrink: 0 }}
+              className="object-contain"
+            />
+            <h1 className="text-3xl font-bold tracking-tight text-[#e8e8e8] shrink-0">
+              Giles Memory Machine
+            </h1>
           </div>
           <div className="flex items-center gap-2">
-            <InboxStatusIndicator />
+            {(lastModified || parsed?.globalLastUpdated) != null && (
+              <span className="text-xs text-[#737373]">
+                Last updated {formatRelativeDate(lastModified ? new Date(lastModified) : parsed!.globalLastUpdated)}
+              </span>
+            )}
+            <AIStatusIndicator />
             <button onClick={handleCopy} className="text-xs text-[#a3a3a3] hover:text-[#e8e8e8]">
               Copy
             </button>
-            <button onClick={fetchContent} className="text-xs text-[#a3a3a3] hover:text-[#e8e8e8]">
+            <button
+              onClick={() => { setError(null); fetchContent(); }}
+              className="text-xs text-[#a3a3a3] hover:text-[#e8e8e8]"
+            >
               Refresh
             </button>
             <button onClick={() => setShowPaste(true)} className="text-xs text-[#a3a3a3] hover:text-[#e8e8e8]">
@@ -188,29 +290,129 @@ export default function Home() {
           </div>
         </header>
 
-        {/* Chat box — top of main area */}
-        <div className="shrink-0 w-full" style={{ backgroundColor: "#0a0a0a" }}>
-          <ChatBox rawContent={content} onContentUpdated={(c) => { setContent(c); fetchContent(); }} />
-        </div>
+        {/* Coach — top when on chat view */}
+        {activeView === "chat" && (
+          <CoachZone
+            hasContent={!!content?.trim()}
+            contentVersion={content.length}
+            compact={false}
+            entryContext={null}
+            todosContext={null}
+          />
+        )}
 
-        {/* Coach */}
-        <CoachZone
-          hasContent={!!content?.trim()}
-          contentVersion={content.length}
-          compact={activeView !== "chat"}
-          entryContext={
-            activeView === "entry" && activeEntry
-              ? { layer: activeEntry.layer, entryName: activeEntry.name }
-              : null
-          }
-          todosContext={todosContext}
-        />
+        {/* Entry/ Todos context coach when viewing entry or todos */}
+        {(activeView === "entry" || activeView === "todos") && (
+          <CoachZone
+            hasContent={!!content?.trim()}
+            contentVersion={content.length}
+            compact={true}
+            entryContext={
+              activeView === "entry" && activeEntry
+                ? { layer: activeEntry.layer, entryName: activeEntry.name }
+                : null
+            }
+            todosContext={todosContext}
+          />
+        )}
 
-        {/* Dynamic content — pie charts, entry detail, section view */}
-        <div className="flex-1 overflow-auto min-h-0" style={{ backgroundColor: "#0a0a0a" }}>
+        {/* Main content — simplified for chat view: Coach, This Week, Stale alert, Chat at bottom */}
+        <div className="flex-1 overflow-auto min-h-0 py-6" style={{ backgroundColor: "#0a0a0a", paddingLeft: 48, paddingRight: 48 }}>
           {activeView === "chat" && parsed && (
-            <div className="pt-12">
-              <PieChartsZone parsed={parsed} />
+            <div className="max-w-2xl flex flex-col" style={{ gap: 24 }}>
+              {/* This Week todos with checkboxes and + Add todo */}
+              <div>
+                <h3
+                  className="mb-4 font-medium uppercase"
+                  style={{ color: "#666666", letterSpacing: "0.1em", fontSize: "0.75rem" }}
+                >
+                  This Week
+                </h3>
+                {(() => {
+                  const open = todos.filter((t) => t.status !== "done");
+                  const now = Date.now();
+                  const sorted = [...open].sort((a, b) => {
+                    const daysA = Math.floor((now - new Date(a.dateAdded).getTime()) / (24 * 60 * 60 * 1000));
+                    const daysB = Math.floor((now - new Date(b.dateAdded).getTime()) / (24 * 60 * 60 * 1000));
+                    if (daysA >= 7 && daysB < 7) return -1;
+                    if (daysA < 7 && daysB >= 7) return 1;
+                    if (daysA >= 7 && daysB >= 7) return daysA - daysB;
+                    return daysB - daysA;
+                  });
+                  const PROJECTS_COLOR = "#4af0c8";
+                  const OVERDUE_COLOR = "#f04a4a";
+                  const DUE_THIS_WEEK_COLOR = "#f0a84a";
+                  return (
+                    <>
+                      <ul className="flex flex-col gap-[10px] mb-3">
+                        {sorted.map((t) => {
+                          const days = Math.floor(
+                            (now - new Date(t.dateAdded).getTime()) / (24 * 60 * 60 * 1000)
+                          );
+                          const isOverdue = days >= 7;
+                          const isDueThisWeek = days >= 3 && days < 7;
+                          const tagColor = isOverdue
+                            ? OVERDUE_COLOR
+                            : isDueThisWeek
+                              ? DUE_THIS_WEEK_COLOR
+                              : PROJECTS_COLOR;
+                          return (
+                            <li key={t.id} className="flex items-center gap-3">
+                              <button
+                                type="button"
+                                onClick={() => handleTodoToggle(t)}
+                                className="shrink-0 inline-flex h-4 w-4 items-center justify-center rounded-sm border cursor-pointer hover:border-[#525252] transition-colors"
+                                style={{
+                                  borderColor: "#333333",
+                                  backgroundColor: t.status === "done" ? PROJECTS_COLOR : "transparent",
+                                }}
+                              >
+                                {t.status === "done" ? (
+                                  <span style={{ color: "#0a0a0a", fontSize: 10 }}>✓</span>
+                                ) : null}
+                              </button>
+                              <span style={{ color: "#e8e8e8", fontSize: 14 }}>{t.text}</span>
+                              {t.category && (
+                                <span style={{ color: tagColor, fontSize: 12, opacity: 0.9 }}>
+                                  · {t.category}
+                                </span>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                      <div className="flex gap-2 items-center">
+                        <input
+                          type="text"
+                          value={newTodoText}
+                          onChange={(e) => setNewTodoText(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && handleAddTodo()}
+                          placeholder="New todo…"
+                          className="flex-1 min-w-0 px-3 py-2 rounded bg-[#111111] border text-[#e8e8e8] placeholder-[#525252] text-sm"
+                          style={{ borderColor: "rgba(255,255,255,0.1)" }}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddTodo}
+                          disabled={!newTodoText.trim() || isAddingTodo}
+                          className="text-xs px-3 py-2 rounded bg-[#262626] text-[#e8e8e8] hover:bg-[#333333] disabled:opacity-50"
+                        >
+                          + Add todo
+                        </button>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+
+              {/* One stale alert at a time */}
+              <StaleAlert
+                parsed={parsed}
+                openTodos={todos.filter((t) => t.status !== "done")}
+                dismissedEntryName={dismissedStaleEntry}
+                onDismiss={setDismissedStaleEntry}
+                onArchive={() => { fetchContent(); fetchTodos(); }}
+              />
             </div>
           )}
           {activeView === "entry" && selectedEntry && selectedLayer && (
@@ -229,13 +431,18 @@ export default function Home() {
             />
           )}
           {activeView === "todos" && (
-            <div className="pt-12">
-              <TodosView
-                onContentUpdated={() => { fetchTodos(); fetchContent(); }}
-              />
-            </div>
+            <TodosView
+              onContentUpdated={() => { fetchTodos(); fetchContent(); }}
+            />
           )}
         </div>
+
+        {/* Chat input at bottom — only on chat view */}
+        {activeView === "chat" && (
+          <div className="shrink-0 w-full" style={{ backgroundColor: "#0a0a0a" }}>
+            <ChatBox rawContent={content} onContentUpdated={(c) => { setContent(c); fetchContent(); }} />
+          </div>
+        )}
       </main>
 
       {/* Paste modal */}
@@ -261,20 +468,67 @@ export default function Home() {
 
       {/* Settings modal */}
       {showSettings && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div
-            className="p-6 w-full max-w-md rounded-lg"
+            className="p-6 w-full max-w-md rounded-lg my-auto"
             style={{ backgroundColor: "#111111", border: "1px solid rgba(255,255,255,0.1)" }}
           >
-            <h3 className="text-lg font-medium text-[#e8e8e8] mb-4">Data directory</h3>
-            <input
-              type="text"
-              value={settingsInput}
-              onChange={(e) => setSettingsInput(e.target.value)}
-              placeholder="/path/to/data"
-              className="w-full px-4 py-2 rounded bg-[#0a0a0a] border text-[#e8e8e8] placeholder-[#525252]"
-              style={{ borderColor: "rgba(255,255,255,0.1)" }}
-            />
+            <h3 className="text-lg font-medium text-[#e8e8e8] mb-4">Settings</h3>
+            <div className="mb-4">
+              <label className="block text-sm text-[#a3a3a3] mb-1">Data directory</label>
+              <input
+                type="text"
+                value={settingsInput}
+                onChange={(e) => setSettingsInput(e.target.value)}
+                placeholder="/path/to/data"
+                className="w-full px-4 py-2 rounded bg-[#0a0a0a] border text-[#e8e8e8] placeholder-[#525252]"
+                style={{ borderColor: "rgba(255,255,255,0.1)" }}
+              />
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm text-[#a3a3a3] mb-2">AI provider</label>
+              <div className="flex flex-wrap gap-2">
+                {(["auto", "light_local", "full_local", "claude"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setAIProvider(mode)}
+                    className={`px-3 py-1.5 rounded text-sm ${
+                      aiProvider === mode
+                        ? "bg-[#e8e8e8] text-[#0a0a0a]"
+                        : "bg-[#262626] text-[#a3a3a3] hover:text-[#e8e8e8]"
+                    }`}
+                  >
+                    {mode === "auto"
+                      ? "Auto"
+                      : mode === "light_local"
+                        ? "Light local"
+                        : mode === "full_local"
+                          ? "Full local"
+                          : "Claude only"}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-[#737373] mt-1">
+                Auto: 3-tier router (8b → 32b → Claude). Light: 8b only. Full: 8b+32b. Claude: cloud only.
+              </p>
+            </div>
+            <div className="mb-4 p-3 rounded bg-[#0a0a0a] border" style={{ borderColor: "rgba(255,255,255,0.1)" }}>
+              <label className="block text-sm text-[#a3a3a3] mb-2">Claude API usage</label>
+              {claudeUsageLoading ? (
+                <div className="text-xs text-[#737373]">Loading…</div>
+              ) : claudeUsage ? (
+                <>
+                  <div className="text-xs text-[#e8e8e8] space-y-1">
+                    <div>Today: {claudeUsage.dailyInputTokens.toLocaleString()} in / {claudeUsage.dailyOutputTokens.toLocaleString()} out ≈ ${(claudeUsage.dailyUsd ?? 0).toFixed(2)}</div>
+                    <div>Total: {claudeUsage.totalInputTokens.toLocaleString()} in / {claudeUsage.totalOutputTokens.toLocaleString()} out ≈ ${(claudeUsage.totalUsd ?? 0).toFixed(2)}</div>
+                  </div>
+                  <p className="text-[10px] text-[#737373] mt-1">Cost is estimated — Sonnet 4 pricing</p>
+                </>
+              ) : (
+                <div className="text-xs text-[#737373]">No usage recorded yet</div>
+              )}
+            </div>
             <div className="flex justify-end gap-2 mt-4">
               <button
                 onClick={() => setShowSettings(false)}

@@ -4,7 +4,7 @@
 
 import fs from "fs/promises";
 import path from "path";
-import Anthropic from "@anthropic-ai/sdk";
+import { generate } from "@/lib/ai-client";
 import {
   readMasterFile,
   writeMasterFile,
@@ -60,6 +60,19 @@ export async function processInboxFile(
     const currentContent = await readMasterFile();
     await fs.writeFile(archivePath, currentContent, "utf-8");
 
+    // Safeguard: reject if output is suspiciously short (likely overwrite bug)
+    const hasProjects = /##\s*PROJECTS/i.test(mergedContent);
+    const hasAdmin = /##\s*ADMIN/i.test(mergedContent);
+    const hasVision = /##\s*VISION\s*\/?\s*IDEAS/i.test(mergedContent);
+    const hasLife = /##\s*LIFE/i.test(mergedContent);
+    const hasAllHeaders = hasProjects && hasAdmin && hasVision && hasLife;
+    const minLength = Math.floor((currentContent?.length ?? 0) * 0.25);
+    if (!hasAllHeaders || mergedContent.length < minLength) {
+      throw new Error(
+        "Merge output invalid — key sections missing or content too short. Try again."
+      );
+    }
+
     // Write master
     await writeMasterFile(mergedContent);
 
@@ -95,9 +108,6 @@ async function mergeIntoContext(
   extractedText: string,
   layerHint: InboxLayer | null
 ): Promise<string> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not configured");
-
   const currentContext = await readMasterFile();
   const today = new Date().toISOString().slice(0, 10);
 
@@ -105,10 +115,7 @@ async function mergeIntoContext(
     ? `IMPORTANT: This content was dropped in the ${layerHint.toUpperCase()} folder. Merge it ONLY into the ## ${layerHint.toUpperCase()} section. Do not add to other layers.`
     : "The user dropped this in 00_DROP_HERE. Determine the correct layer (PROJECTS, ADMIN, VISION / IDEAS, or LIFE) and category automatically.";
 
-  const anthropic = new Anthropic({ apiKey });
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 8192,
+  const { text } = await generate({
     system: `You are a context manager. Merge incoming content into AI_CONTEXT.md.
 
 ${SCHEMA_PROMPT}
@@ -142,14 +149,10 @@ ${extractedText}
 Output the complete merged AI_CONTEXT.md:`,
       },
     ],
+    maxTokens: 8192,
   });
 
-  const textBlock = response.content.find(
-    (b): b is { type: "text"; text: string } => b.type === "text"
-  );
-  if (!textBlock) throw new Error("Claude did not return text");
-
-  let merged = textBlock.text.trim();
+  let merged = text.trim();
   const codeMatch = merged.match(/```(?:markdown)?\s*([\s\S]*?)```/);
   if (codeMatch) merged = codeMatch[1].trim();
 
@@ -165,8 +168,8 @@ Output the complete merged AI_CONTEXT.md:`,
   return merged;
 }
 
-export async function countFilesWaiting(): Promise<number> {
-  let count = 0;
+export async function listFilesWaiting(): Promise<{ filePath: string; sourceFolder: string }[]> {
+  const result: { filePath: string; sourceFolder: string }[] = [];
   const folders = [
     INBOX_FOLDERS.DROP,
     INBOX_FOLDERS.PROJECTS,
@@ -180,12 +183,16 @@ export async function countFilesWaiting(): Promise<number> {
       const entries = await fs.readdir(dir, { withFileTypes: true });
       for (const e of entries) {
         if (e.isFile() && !e.name.startsWith(".") && isAcceptedFile(e.name)) {
-          count++;
+          result.push({ filePath: path.join(dir, e.name), sourceFolder: folder });
         }
       }
     }
   } catch {
     // Folder may not exist
   }
-  return count;
+  return result;
+}
+
+export async function countFilesWaiting(): Promise<number> {
+  return (await listFilesWaiting()).length;
 }

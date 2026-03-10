@@ -44,11 +44,12 @@ export interface ParsedContext {
   overallHealthTier: HealthTier;
 }
 
-const LAYER_HEADERS = ["## PROJECTS", "## ADMIN", "## VISION / IDEAS"] as const;
+const LAYER_HEADERS = ["## PROJECTS", "## ADMIN", "## VISION / IDEAS", "## LIFE"] as const;
 const MIN_ENTRIES: Record<string, number> = {
   PROJECTS: 3,
   ADMIN: 4,
   "VISION / IDEAS": 2,
+  LIFE: 2,
 };
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
@@ -86,7 +87,9 @@ function extractEntriesFromSection(
     if (lu) lastSeenDate = parseDate(lu[1]);
 
     // Match "- **Name** — summary" or "- **Name:** summary" (colon used in Finance, Admin, etc.)
-    const boldMatch = line.match(/^-\s+\*\*(.+?)\*\*\s*(?:—|–|-|:)\s*(.*)$/);
+    let boldMatch = line.match(/^-\s+\*\*(.+?)\*\*\s*(?:—|–|-|:)\s*(.*)$/);
+    // Also match "**Name**: summary" (no leading dash, used in LIFE layer)
+    if (!boldMatch) boldMatch = line.match(/^\*\*(.+?)\*\*\s*:\s*(.*)$/);
     if (boldMatch) {
       const name = boldMatch[1].trim();
       let summary = boldMatch[2].trim();
@@ -96,7 +99,7 @@ function extractEntriesFromSection(
       let j = i + 1;
       while (j < lines.length) {
         const next = lines[j];
-        if (next.match(/^-\s+\*\*/)) break;
+        if (next.match(/^-\s+\*\*/) || next.match(/^\*\*(.+?)\*\*\s*:/)) break;
         const nextLu = next.match(/\*?Last updated:\s*(\d{4}-\d{2}-\d{2})\*?/i);
         if (nextLu) {
           lastUpdated = parseDate(nextLu[1]);
@@ -175,8 +178,15 @@ export function parseContextMarkdown(raw: string): ParsedContext {
     };
   }
 
-  const globalMatch = raw.match(/\*?Last updated:\s*(\d{4}-\d{2}-\d{2})\*?/i);
-  const globalLastUpdated = globalMatch ? parseDate(globalMatch[1]) : null;
+  // Use the MOST RECENT "Last updated" date in the file, not the first
+  const allDateMatches = raw.matchAll(/\*?Last updated:\s*(\d{4}-\d{2}-\d{2})\*?/gi);
+  let globalLastUpdated: Date | null = null;
+  for (const m of allDateMatches) {
+    const d = parseDate(m[1]);
+    if (d && (!globalLastUpdated || d > globalLastUpdated)) {
+      globalLastUpdated = d;
+    }
+  }
 
   const layers: ParsedLayer[] = [];
   let totalEntries = 0;
@@ -248,8 +258,13 @@ export function parseContextMarkdown(raw: string): ParsedContext {
 
 export function formatRelativeDate(date: Date | null): string {
   if (!date) return "Never";
-  const days = Math.floor((Date.now() - date.getTime()) / MS_PER_DAY);
-  if (days === 0) return "Today";
+  const diffMs = Date.now() - date.getTime();
+  const mins = Math.floor(diffMs / 60000);
+  const hours = Math.floor(diffMs / 3600000);
+  const days = Math.floor(diffMs / MS_PER_DAY);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  if (hours < 24) return `${hours}h ago`;
   if (days === 1) return "Yesterday";
   if (days < 7) return `${days} days ago`;
   if (days < 30) return `${Math.floor(days / 7)} weeks ago`;

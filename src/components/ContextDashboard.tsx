@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { apiUrl } from "@/lib/api";
 import {
   parseContextMarkdown,
   formatRelativeDate,
@@ -12,7 +13,6 @@ import {
   type HealthTier,
 } from "@/lib/parse-context";
 import { findEntryBlock } from "@/lib/entry-edit";
-import { ShapeOfThings } from "@/components/ShapeOfThings";
 import { SummaryBox, type SummaryTarget } from "@/components/SummaryBox";
 
 interface ContextDashboardProps {
@@ -95,10 +95,6 @@ export function ContextDashboard({ rawContent, onViewRaw, onContentUpdated, pend
     setSummaryTarget({ type: "category", layer, category });
   };
 
-  const handleLayerClick = (layer: ParsedLayer) => {
-    setSummaryTarget({ type: "layer", layer });
-  };
-
   return (
     <div className="flex h-full gap-4 min-w-0">
       <div className="flex-1 flex flex-col min-w-0 gap-4">
@@ -145,14 +141,6 @@ export function ContextDashboard({ rawContent, onViewRaw, onContentUpdated, pend
           View raw
         </button>
       </div>
-
-      {/* Shape of things */}
-      <ShapeOfThings
-        parsed={parsed}
-        rawContent={rawContent ?? ""}
-        onCategoryClick={handleCategoryClick}
-        onLayerClick={handleLayerClick}
-      />
 
       {/* Layer cards */}
       <div className="flex-1 overflow-auto space-y-3">
@@ -347,7 +335,7 @@ function EntryRow({
     if (!onContentUpdated || !editValue.trim()) return;
     setIsSaving(true);
     try {
-      const res = await fetch("/api/context/entry", {
+      const res = await fetch(apiUrl("/api/context/entry"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -372,7 +360,7 @@ function EntryRow({
     if (!onContentUpdated) return;
     setIsRemoving(true);
     try {
-      const res = await fetch("/api/context/entry", {
+      const res = await fetch(apiUrl("/api/context/entry"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

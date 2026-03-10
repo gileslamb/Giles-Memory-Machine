@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { apiUrl } from "@/lib/api";
 import { parseFileToText } from "@/lib/parse-files";
 
 interface PastePanelProps {
@@ -33,7 +34,7 @@ export function PastePanel({ onContentUpdated, onError }: PastePanelProps) {
     setIsLoading(true);
     onError(null);
     try {
-      const res = await fetch("/api/context/merge-preview", {
+      const res = await fetch(apiUrl("/api/context/merge-preview"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pastedContent: pasteValue.trim() }),
@@ -54,7 +55,7 @@ export function PastePanel({ onContentUpdated, onError }: PastePanelProps) {
   const handleAccept = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch("/api/context", {
+      const res = await fetch(apiUrl("/api/context"), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: proposedContent }),
@@ -84,7 +85,7 @@ export function PastePanel({ onContentUpdated, onError }: PastePanelProps) {
   const handleSaveEdit = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch("/api/context", {
+      const res = await fetch(apiUrl("/api/context"), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: editContent }),

@@ -3,11 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --hostname 127.0.0.1",
+    "dev": "ulimit -n 10240 2>/dev/null || true; next dev --hostname 127.0.0.1",
     "dev:remote": "next dev --hostname 0.0.0.0",
     "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
+    "start": "next start -H 127.0.0.1",
+    "lint": "next lint",
+    "print-paths": "node scripts/print-paths.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
@@ -15,11 +16,11 @@
     "chokidar": "^5.0.0",
     "mammoth": "^1.11.0",
     "next": "^15.1.0",
+    "ollama": "^0.6.3",
     "pdf-parse": "^2.4.5",
     "pdfjs-dist": "^5.5.207",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "recharts": "^3.8.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

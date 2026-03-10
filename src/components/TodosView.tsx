@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { apiUrl } from "@/lib/api";
 import type { ParsedTodo } from "@/lib/parse-todos";
 
 const LAYER_COLORS: Record<string, string> = {
@@ -47,7 +48,7 @@ export function TodosView({ onContentUpdated }: TodosViewProps) {
 
   const fetchTodos = useCallback(async () => {
     try {
-      const res = await fetch("/api/context/todos?includeArchived=true");
+      const res = await fetch(apiUrl("/api/context/todos?includeArchived=true"));
       const data = await res.json();
       if (data.todos) setTodos(data.todos);
     } catch {
@@ -79,7 +80,7 @@ export function TodosView({ onContentUpdated }: TodosViewProps) {
     );
     setTodos(updated);
     try {
-      await fetch("/api/context/todos", {
+      await fetch(apiUrl("/api/context/todos"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ todos: updated }),
@@ -104,7 +105,7 @@ export function TodosView({ onContentUpdated }: TodosViewProps) {
     };
     const category = categoryMap[layer] ?? "Projects > General";
     try {
-      const res = await fetch("/api/context/todos", {
+      const res = await fetch(apiUrl("/api/context/todos"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, category }),

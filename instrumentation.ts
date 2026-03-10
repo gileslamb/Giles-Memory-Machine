@@ -5,7 +5,12 @@
 
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
-    const { startInboxWatcher } = await import("./src/lib/inbox-watcher");
-    await startInboxWatcher();
+    try {
+      const { startInboxWatcher } = await import("./src/lib/inbox-watcher");
+      await startInboxWatcher();
+      console.log("[Memory Machine] Inbox watcher started");
+    } catch (err) {
+      console.error("[Memory Machine] Inbox watcher failed to start:", err);
+    }
   }
 }

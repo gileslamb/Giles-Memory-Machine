@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
+import { apiUrl } from "@/lib/api";
 import {
   parseTodosSection,
   serializeTodos,
@@ -49,7 +50,7 @@ export function KanbanBoard() {
 
   const fetchTodos = useCallback(async () => {
     try {
-      const res = await fetch("/api/context/todos");
+      const res = await fetch(apiUrl("/api/context/todos"));
       const { todos: parsed } = await res.json();
       setTodos(parsed ?? []);
     } catch {
@@ -66,7 +67,7 @@ export function KanbanBoard() {
   const saveTodos = async (updated: ParsedTodo[]) => {
     setIsSaving(true);
     try {
-      const res = await fetch("/api/context/todos", {
+      const res = await fetch(apiUrl("/api/context/todos"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ todos: updated }),
@@ -114,7 +115,7 @@ export function KanbanBoard() {
   const addTask = async () => {
     if (!newTaskText.trim()) return;
     try {
-      const res = await fetch("/api/context/todos", {
+      const res = await fetch(apiUrl("/api/context/todos"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: newTaskText.trim(), category: newTaskCategory }),

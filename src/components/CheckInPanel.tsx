@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { apiUrl } from "@/lib/api";
 
 interface Message {
   role: "user" | "assistant";
@@ -54,7 +55,7 @@ export function CheckInPanel({
     if (greetingLoaded || messages.length > 0) return;
     setIsLoading(true);
     try {
-      const res = await fetch("/api/checkin", {
+      const res = await fetch(apiUrl("/api/checkin"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: [] }),
@@ -84,7 +85,7 @@ export function CheckInPanel({
     if (!pendingReview) return;
     setIsLoading(true);
     try {
-      const res = await fetch("/api/checkin/commit", {
+      const res = await fetch(apiUrl("/api/checkin/commit"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(pendingReview),
@@ -115,7 +116,7 @@ export function CheckInPanel({
 
   const sendToApi = useCallback(
     async (apiMessages: Message[]): Promise<{ reply?: string; pendingReview?: PendingReview }> => {
-      const res = await fetch("/api/checkin", {
+      const res = await fetch(apiUrl("/api/checkin"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -132,7 +133,7 @@ export function CheckInPanel({
             idleTimerRef.current = null;
             const withDone = [...apiMessages, { role: "user", content: "done" }];
             setMessages((m) => [...m, { role: "user", content: "done" }]);
-            fetch("/api/checkin", {
+            fetch(apiUrl("/api/checkin"), {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
