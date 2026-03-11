@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { readMasterFile, writeMasterFile } from "@/lib/file-system";
+import { readMasterFile, writeMasterFile, setNextArchivePreview } from "@/lib/file-system";
 
 function extractLayerSection(content: string, layerHeader: string, nextHeader: string | null): string {
   const start = content.indexOf(layerHeader);
@@ -100,6 +100,7 @@ export async function PUT(request: Request) {
       const beforeBlock = content.slice(0, blockStartInContent);
       const afterBlock = content.slice(blockEndInContent);
       const updated = beforeBlock + newContent.trim() + afterBlock;
+      setNextArchivePreview(entryName);
       await writeMasterFile(updated);
       return NextResponse.json({ ok: true });
     }

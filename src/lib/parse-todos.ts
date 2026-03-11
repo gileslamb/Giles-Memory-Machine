@@ -50,11 +50,19 @@ export function parseTodosSection(
     const statusChar = statusMatch[1];
     const rest = line.slice(statusMatch[0].length);
     const parts = rest.split(" · ");
-    if (parts.length < 3) continue;
+    if (parts.length < 2) continue;
 
-    const category = parts.pop()!.trim();
-    const datePart = parts.pop()!.trim();
-    const text = parts.join(" · ").trim();
+    let category = "Projects > General";
+    let datePart: string;
+    let text: string;
+    if (parts.length >= 3) {
+      category = parts.pop()!.trim();
+      datePart = parts.pop()!.trim();
+      text = parts.join(" · ").trim();
+    } else {
+      datePart = parts.pop()!.trim();
+      text = parts.join(" · ").trim();
+    }
 
     const dateMatch = datePart.match(DATE_PART_REGEX);
     if (!dateMatch) continue;
@@ -105,4 +113,31 @@ export function serializeTodos(todos: ParsedTodo[]): string {
 
 export function buildTodosSection(todoLines: string): string {
   return `## CURRENT TODOS\n${todoLines}\n`;
+}
+
+/**
+ * Preserve existing todos when merging. Replaces the ## CURRENT TODOS section in mergedContent
+ * with: existing todos + any NEW todos from mergedContent (by text) that aren't already present.
+ * Prevents LLM merges from overwriting the todo list.
+ */
+export function preserveTodosInMerge(existingContent: string, mergedContent: string): string {
+  const existingTodos = parseTodosSection(existingContent, { includeArchivedDone: true });
+  const mergedTodos = parseTodosSection(mergedContent, { includeArchivedDone: true });
+  const existingTexts = new Set(existingTodos.map((t) => t.text.toLowerCase().trim()));
+  const newTodos = mergedTodos.filter((t) => !existingTexts.has(t.text.toLowerCase().trim()));
+  const finalTodos = [...existingTodos, ...newTodos];
+  const serialized = serializeTodos(finalTodos);
+
+  const todosHeaderIdx = mergedContent.indexOf("## CURRENT TODOS");
+  if (todosHeaderIdx >= 0) {
+    const afterTodosHeader = mergedContent.slice(todosHeaderIdx);
+    const nextH2 = afterTodosHeader.indexOf("\n## ", 1);
+    const sectionEnd = nextH2 >= 0 ? todosHeaderIdx + nextH2 : mergedContent.length;
+    const before = mergedContent.slice(0, todosHeaderIdx);
+    const rest = mergedContent.slice(sectionEnd);
+    return before + "## CURRENT TODOS\n" + serialized + "\n" + rest;
+  }
+  // No todos section in merged - append it
+  const trimmed = mergedContent.trimEnd();
+  return trimmed + (trimmed.endsWith("\n") ? "" : "\n") + "\n## CURRENT TODOS\n" + serialized + "\n";
 }

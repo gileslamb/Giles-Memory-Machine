@@ -61,15 +61,37 @@ export async function extractTextFromPath(filePath: string): Promise<string> {
   }
 
   if (ext === "pdf") {
-    const { PDFParse } = await import("pdf-parse");
     const buffer = await fs.readFile(filePath);
-    const parser = new PDFParse({ data: buffer });
+    const uint8 = new Uint8Array(buffer);
+
+    // Try pdf-parse first
     try {
-      const result = await parser.getText();
-      await parser.destroy();
-      return result.text?.trim() ?? "(No extractable text in PDF)";
-    } finally {
-      await parser.destroy();
+      const { PDFParse } = await import("pdf-parse");
+      const parser = new PDFParse({ data: buffer });
+      try {
+        const result = await parser.getText();
+        const text = result.text?.trim();
+        if (text) return text;
+      } finally {
+        await parser.destroy();
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const isDefinePropertyError = msg.includes("defineProperty") || msg.includes("non-object");
+      if (!isDefinePropertyError) throw err;
+      // Fall through to unpdf fallback
+    }
+
+    // Fallback: unpdf (uses serverless pdfjs build, often works when pdf-parse fails)
+    try {
+      const { getDocumentProxy, extractText } = await import("unpdf");
+      const pdf = await getDocumentProxy(uint8);
+      const { text } = await extractText(pdf, { mergePages: true });
+      return text?.trim() ?? "(No extractable text in PDF)";
+    } catch {
+      throw new Error(
+        "PDF parsing failed. Try: 1) Run `npm run build && npm run start` instead of dev, or 2) Copy the PDF text and paste it into the chat."
+      );
     }
   }
 

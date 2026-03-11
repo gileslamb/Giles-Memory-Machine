@@ -8,10 +8,12 @@ import { generate } from "@/lib/ai-client";
 import {
   readMasterFile,
   writeMasterFile,
+  setNextArchivePreview,
   ensureDataDirectory,
   getArchiveFilename,
   writeDomainFilesFromMaster,
 } from "./file-system";
+import { preserveTodosInMerge } from "./parse-todos";
 import { SCHEMA_PROMPT } from "./schema";
 import { extractTextFromPath, isAcceptedFile } from "./extract-from-path";
 import {
@@ -74,6 +76,7 @@ export async function processInboxFile(
     }
 
     // Write master
+    setNextArchivePreview(path.basename(filePath));
     await writeMasterFile(mergedContent);
 
     // Write domain files
@@ -126,7 +129,9 @@ MERGE RULES:
 3. Add "Last updated: ${today}" to any changed section
 4. Keep the file clean and concise — summarise, don't dump raw text
 5. Preserve all four layers (PROJECTS, ADMIN, VISION / IDEAS, LIFE)
-6. Output ONLY the complete merged markdown — no preamble`,
+6. Output ONLY the complete merged markdown — no preamble
+
+CRITICAL — ## CURRENT TODOS: Never remove, replace, or truncate the existing ## CURRENT TODOS section. Preserve every existing todo line exactly. You may ADD new todos from the incoming content (format: - [ ] item · added ${today} · category). Do not duplicate. Do not remove any existing todos.`,
     messages: [
       {
         role: "user",
@@ -165,7 +170,27 @@ Output the complete merged AI_CONTEXT.md:`,
     `Last updated: ${today}`
   );
 
-  return merged;
+  return preserveTodosInMerge(currentContext, merged);
+}
+
+async function scanDirRecursive(
+  dir: string,
+  sourceFolder: string,
+  result: { filePath: string; sourceFolder: string }[]
+): Promise<void> {
+  try {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    for (const e of entries) {
+      const fullPath = path.join(dir, e.name);
+      if (e.isDirectory() && !e.name.startsWith(".")) {
+        await scanDirRecursive(fullPath, sourceFolder, result);
+      } else if (e.isFile() && !e.name.startsWith(".") && isAcceptedFile(e.name)) {
+        result.push({ filePath: fullPath, sourceFolder });
+      }
+    }
+  } catch {
+    // Folder may not exist or not readable
+  }
 }
 
 export async function listFilesWaiting(): Promise<{ filePath: string; sourceFolder: string }[]> {
@@ -177,22 +202,31 @@ export async function listFilesWaiting(): Promise<{ filePath: string; sourceFold
     INBOX_FOLDERS.VISION,
     INBOX_FOLDERS.LIFE,
   ];
-  try {
-    for (const folder of folders) {
-      const dir = path.join(MEMORY_INBOX_PATH, folder);
-      const entries = await fs.readdir(dir, { withFileTypes: true });
-      for (const e of entries) {
-        if (e.isFile() && !e.name.startsWith(".") && isAcceptedFile(e.name)) {
-          result.push({ filePath: path.join(dir, e.name), sourceFolder: folder });
-        }
-      }
-    }
-  } catch {
-    // Folder may not exist
+  for (const folder of folders) {
+    const dir = path.join(MEMORY_INBOX_PATH, folder);
+    await scanDirRecursive(dir, folder, result);
   }
   return result;
 }
 
 export async function countFilesWaiting(): Promise<number> {
   return (await listFilesWaiting()).length;
+}
+
+/** Process all waiting files immediately. Returns number processed. */
+export async function processAllWaitingFiles(): Promise<{ processed: number; errors: string[] }> {
+  const files = await listFilesWaiting();
+  const errors: string[] = [];
+  let processed = 0;
+  for (const { filePath, sourceFolder } of files) {
+    const result = await processInboxFile(filePath, sourceFolder);
+    if (result.success) {
+      processed++;
+    } else if (result.error) {
+      errors.push(`${path.basename(filePath)}: ${result.error}`);
+    }
+  }
+  const count = await countFilesWaiting();
+  await writeInboxStatus({ filesWaiting: count });
+  return { processed, errors };
 }

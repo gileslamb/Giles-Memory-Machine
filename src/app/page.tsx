@@ -10,12 +10,15 @@ import { AIStatusIndicator } from "@/components/AIStatusIndicator";
 import { PastePanel } from "@/components/PastePanel";
 import { TodosView } from "@/components/TodosView";
 import { StaleAlert } from "@/components/StaleAlert";
+import { AdvisorChatPanel } from "@/components/AdvisorChatPanel";
 import { apiUrl } from "@/lib/api";
 import { parseContextMarkdown, formatRelativeDate } from "@/lib/parse-context";
 import type { ParsedEntry, ParsedLayer } from "@/lib/parse-context";
 import type { ParsedTodo } from "@/lib/parse-todos";
 
 type MainViewState = "chat" | "entry" | "section" | "todos";
+
+const HOME_TODOS_LIMIT = 10;
 
 export default function Home() {
   const [content, setContent] = useState<string>("");
@@ -38,9 +41,11 @@ export default function Home() {
   const [activeEntry, setActiveEntry] = useState<{ layer: string; name: string } | null>(null);
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const [todos, setTodos] = useState<ParsedTodo[]>([]);
-  const [dismissedStaleEntry, setDismissedStaleEntry] = useState<string | null>(null);
+  const [dismissedStaleEntries, setDismissedStaleEntries] = useState<Set<string>>(new Set());
   const [newTodoText, setNewTodoText] = useState("");
   const [isAddingTodo, setIsAddingTodo] = useState(false);
+  const [isProcessingInbox, setIsProcessingInbox] = useState(false);
+  const [activityRefreshTrigger, setActivityRefreshTrigger] = useState(0);
 
   const parsed = useMemo(() => {
     try {
@@ -74,7 +79,7 @@ export default function Home() {
       const msg = e instanceof Error ? e.message : "Failed to load";
       setError(
         msg.toLowerCase().includes("fetch") || msg.toLowerCase().includes("network")
-          ? "Can't reach server. Use http://127.0.0.1:3000 and ensure the server is running."
+          ? "Can't reach server. Check the terminal for the port (often 3001 if 3000 is busy) and open that URL."
           : msg
       );
     }
@@ -97,6 +102,11 @@ export default function Home() {
   useEffect(() => {
     fetchTodos();
   }, [fetchTodos]);
+
+  // Bootstrap inbox watcher on load (starts processing of MEMORY_INBOX files)
+  useEffect(() => {
+    fetch(apiUrl("/api/inbox-status"), { cache: "no-store" }).catch(() => {});
+  }, []);
 
   const todosContext = useMemo(() => {
     if (activeView !== "todos") return null;
@@ -245,6 +255,7 @@ export default function Home() {
         onTodosClick={handleTodosClick}
         onEntryClick={handleEntryClick}
         onSectionClick={handleSectionClick}
+        activityRefreshTrigger={activityRefreshTrigger}
       />
 
       {/* Main area */}
@@ -284,21 +295,122 @@ export default function Home() {
             <button onClick={() => setShowPaste(true)} className="text-xs text-[#a3a3a3] hover:text-[#e8e8e8]">
               Paste
             </button>
+            <button
+              onClick={async () => {
+                if (isProcessingInbox) return;
+                setIsProcessingInbox(true);
+                setError(null);
+                try {
+                  const res = await fetch(apiUrl("/api/inbox-process-now"), { method: "POST" });
+                  const data = await res.json();
+                  if (res.ok) {
+                    fetchContent();
+                    fetchTodos();
+                    setActivityRefreshTrigger((t) => t + 1);
+                    if (data.errors?.length) {
+                      setError(data.errors.join("; "));
+                    }
+                  } else {
+                    setError(data.error ?? "Failed to process inbox");
+                  }
+                } catch {
+                  setError("Failed to process inbox");
+                } finally {
+                  setIsProcessingInbox(false);
+                }
+              }}
+              disabled={isProcessingInbox}
+              className="text-xs text-[#a3a3a3] hover:text-[#e8e8e8] disabled:opacity-50"
+            >
+              {isProcessingInbox ? "Processing…" : "Process inbox now"}
+            </button>
             <button onClick={() => setShowSettings(true)} className="text-xs text-[#a3a3a3] hover:text-[#e8e8e8]">
               Settings
             </button>
           </div>
         </header>
 
-        {/* Coach — top when on chat view */}
+        {/* Chat input — first thing visible on chat view */}
+        {activeView === "chat" && (
+          <div className="shrink-0 w-full" style={{ backgroundColor: "#0a0a0a" }}>
+            <ChatBox rawContent={content} onContentUpdated={(c) => { setContent(c); fetchContent(); }} />
+          </div>
+        )}
+
+        {/* Coach Notes — below chat, above todos */}
         {activeView === "chat" && (
           <CoachZone
             hasContent={!!content?.trim()}
-            contentVersion={content.length}
+            contentVersion={lastModified ? new Date(lastModified).getTime() : content.length}
             compact={false}
             entryContext={null}
             todosContext={null}
           />
+        )}
+
+        {/* Todos — below coach */}
+        {activeView === "chat" && (
+          <div className="shrink-0 border-b py-4 px-6" style={{ backgroundColor: "#0a0a0a", borderColor: "rgba(255,255,255,0.06)" }}>
+            <h3 className="mb-3 font-medium uppercase" style={{ color: "#666666", letterSpacing: "0.1em", fontSize: "0.75rem" }}>
+              Todos
+            </h3>
+            <div className="flex flex-col gap-2 mb-3">
+              {(() => {
+                const open = todos.filter((t) => t.status !== "done");
+                if (open.length === 0) {
+                  return <p className="text-sm text-[#525252]">No todos yet. Add one below.</p>;
+                }
+                const sorted = [...open]
+                  .sort((a, b) => {
+                    const daysA = Math.floor((Date.now() - new Date(a.dateAdded).getTime()) / (24 * 60 * 60 * 1000));
+                    const daysB = Math.floor((Date.now() - new Date(b.dateAdded).getTime()) / (24 * 60 * 60 * 1000));
+                    if (daysA >= 7 && daysB < 7) return -1;
+                    if (daysA < 7 && daysB >= 7) return 1;
+                    if (daysA >= 7 && daysB >= 7) return daysA - daysB;
+                    return daysB - daysA;
+                  })
+                  .slice(0, HOME_TODOS_LIMIT);
+                return sorted.map((t) => (
+                  <div key={t.id} className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => handleTodoToggle(t)}
+                      className="shrink-0 inline-flex h-4 w-4 items-center justify-center rounded-sm border cursor-pointer hover:border-[#525252]"
+                      style={{ borderColor: "#333333", backgroundColor: t.status === "done" ? "#4af0c8" : "transparent" }}
+                    >
+                      {t.status === "done" ? <span style={{ color: "#0a0a0a", fontSize: 10 }}>✓</span> : null}
+                    </button>
+                    <span style={{ color: "#e8e8e8", fontSize: 14 }}>{t.text}</span>
+                    {t.category && <span style={{ color: "#737373", fontSize: 12 }}>· {t.category}</span>}
+                  </div>
+                ));
+              })()}
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newTodoText}
+                onChange={(e) => setNewTodoText(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleAddTodo()}
+                placeholder="New todo…"
+                className="flex-1 min-w-0 px-3 py-2 rounded bg-[#111111] border text-[#e8e8e8] placeholder-[#525252] text-sm"
+                style={{ borderColor: "rgba(255,255,255,0.1)" }}
+              />
+              <button
+                type="button"
+                onClick={handleAddTodo}
+                disabled={!newTodoText.trim() || isAddingTodo}
+                className="text-xs px-3 py-2 rounded bg-[#262626] text-[#e8e8e8] hover:bg-[#333333] disabled:opacity-50"
+              >
+                + Add todo
+              </button>
+            </div>
+            {todos.filter((t) => t.status !== "done").length > HOME_TODOS_LIMIT && (
+              <button type="button" onClick={handleTodosClick} className="mt-2 text-xs text-[#666666] hover:text-[#a3a3a3]">
+                View all {todos.filter((t) => t.status !== "done").length} todos →
+              </button>
+            )}
+          </div>
         )}
 
         {/* Entry/ Todos context coach when viewing entry or todos */}
@@ -316,105 +428,21 @@ export default function Home() {
           />
         )}
 
-        {/* Main content — simplified for chat view: Coach, This Week, Stale alert, Chat at bottom */}
-        <div className="flex-1 overflow-auto min-h-0 py-6" style={{ backgroundColor: "#0a0a0a", paddingLeft: 48, paddingRight: 48 }}>
-          {activeView === "chat" && parsed && (
-            <div className="max-w-2xl flex flex-col" style={{ gap: 24 }}>
-              {/* This Week todos with checkboxes and + Add todo */}
-              <div>
-                <h3
-                  className="mb-4 font-medium uppercase"
-                  style={{ color: "#666666", letterSpacing: "0.1em", fontSize: "0.75rem" }}
-                >
-                  This Week
-                </h3>
-                {(() => {
-                  const open = todos.filter((t) => t.status !== "done");
-                  const now = Date.now();
-                  const sorted = [...open].sort((a, b) => {
-                    const daysA = Math.floor((now - new Date(a.dateAdded).getTime()) / (24 * 60 * 60 * 1000));
-                    const daysB = Math.floor((now - new Date(b.dateAdded).getTime()) / (24 * 60 * 60 * 1000));
-                    if (daysA >= 7 && daysB < 7) return -1;
-                    if (daysA < 7 && daysB >= 7) return 1;
-                    if (daysA >= 7 && daysB >= 7) return daysA - daysB;
-                    return daysB - daysA;
-                  });
-                  const PROJECTS_COLOR = "#4af0c8";
-                  const OVERDUE_COLOR = "#f04a4a";
-                  const DUE_THIS_WEEK_COLOR = "#f0a84a";
-                  return (
-                    <>
-                      <ul className="flex flex-col gap-[10px] mb-3">
-                        {sorted.map((t) => {
-                          const days = Math.floor(
-                            (now - new Date(t.dateAdded).getTime()) / (24 * 60 * 60 * 1000)
-                          );
-                          const isOverdue = days >= 7;
-                          const isDueThisWeek = days >= 3 && days < 7;
-                          const tagColor = isOverdue
-                            ? OVERDUE_COLOR
-                            : isDueThisWeek
-                              ? DUE_THIS_WEEK_COLOR
-                              : PROJECTS_COLOR;
-                          return (
-                            <li key={t.id} className="flex items-center gap-3">
-                              <button
-                                type="button"
-                                onClick={() => handleTodoToggle(t)}
-                                className="shrink-0 inline-flex h-4 w-4 items-center justify-center rounded-sm border cursor-pointer hover:border-[#525252] transition-colors"
-                                style={{
-                                  borderColor: "#333333",
-                                  backgroundColor: t.status === "done" ? PROJECTS_COLOR : "transparent",
-                                }}
-                              >
-                                {t.status === "done" ? (
-                                  <span style={{ color: "#0a0a0a", fontSize: 10 }}>✓</span>
-                                ) : null}
-                              </button>
-                              <span style={{ color: "#e8e8e8", fontSize: 14 }}>{t.text}</span>
-                              {t.category && (
-                                <span style={{ color: tagColor, fontSize: 12, opacity: 0.9 }}>
-                                  · {t.category}
-                                </span>
-                              )}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                      <div className="flex gap-2 items-center">
-                        <input
-                          type="text"
-                          value={newTodoText}
-                          onChange={(e) => setNewTodoText(e.target.value)}
-                          onKeyDown={(e) => e.key === "Enter" && handleAddTodo()}
-                          placeholder="New todo…"
-                          className="flex-1 min-w-0 px-3 py-2 rounded bg-[#111111] border text-[#e8e8e8] placeholder-[#525252] text-sm"
-                          style={{ borderColor: "rgba(255,255,255,0.1)" }}
-                        />
-                        <button
-                          type="button"
-                          onClick={handleAddTodo}
-                          disabled={!newTodoText.trim() || isAddingTodo}
-                          className="text-xs px-3 py-2 rounded bg-[#262626] text-[#e8e8e8] hover:bg-[#333333] disabled:opacity-50"
-                        >
-                          + Add todo
-                        </button>
-                      </div>
-                    </>
-                  );
-                })()}
+        {/* Main content — Stale alert, scrollable + Advisor chat when on chat view */}
+        <div className="flex-1 flex min-h-0">
+          <div className="flex-1 overflow-auto min-h-0 py-6" style={{ backgroundColor: "#0a0a0a", paddingLeft: 48, paddingRight: 48 }}>
+            {activeView === "chat" && (
+              <div className="max-w-2xl flex flex-col" style={{ gap: 24 }}>
+                {/* One stale alert at a time */}
+                <StaleAlert
+                  parsed={parsed}
+                  openTodos={todos.filter((t) => t.status !== "done")}
+                  dismissedEntryNames={dismissedStaleEntries}
+                  onDismiss={(name) => setDismissedStaleEntries((prev) => new Set(prev).add(name))}
+                  onArchive={() => { fetchContent(); fetchTodos(); }}
+                />
               </div>
-
-              {/* One stale alert at a time */}
-              <StaleAlert
-                parsed={parsed}
-                openTodos={todos.filter((t) => t.status !== "done")}
-                dismissedEntryName={dismissedStaleEntry}
-                onDismiss={setDismissedStaleEntry}
-                onArchive={() => { fetchContent(); fetchTodos(); }}
-              />
-            </div>
-          )}
+            )}
           {activeView === "entry" && selectedEntry && selectedLayer && (
             <EntryDetailView
               entry={selectedEntry}
@@ -435,14 +463,13 @@ export default function Home() {
               onContentUpdated={() => { fetchTodos(); fetchContent(); }}
             />
           )}
-        </div>
-
-        {/* Chat input at bottom — only on chat view */}
-        {activeView === "chat" && (
-          <div className="shrink-0 w-full" style={{ backgroundColor: "#0a0a0a" }}>
-            <ChatBox rawContent={content} onContentUpdated={(c) => { setContent(c); fetchContent(); }} />
           </div>
-        )}
+          {activeView === "chat" && (
+            <div className="shrink-0 py-6 pr-6 pl-2" style={{ backgroundColor: "#0a0a0a", borderLeft: "1px solid rgba(255,255,255,0.06)" }}>
+              <AdvisorChatPanel rawContent={content} />
+            </div>
+          )}
+        </div>
       </main>
 
       {/* Paste modal */}

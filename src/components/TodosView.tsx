@@ -65,8 +65,7 @@ export function TodosView({ onContentUpdated }: TodosViewProps) {
   const openTodos = todos.filter((t) => t.status !== "done");
   const completedTodos = todos
     .filter((t) => t.status === "done")
-    .sort((a, b) => (b.dateCompleted ?? "").localeCompare(a.dateCompleted ?? ""))
-    .slice(0, 10);
+    .sort((a, b) => (b.dateCompleted ?? "").localeCompare(a.dateCompleted ?? ""));
 
   const grouped = LAYER_ORDER.reduce<Record<string, ParsedTodo[]>>((acc, layer) => {
     acc[layer] = openTodos.filter((t) => categoryToLayer(t.category) === layer);

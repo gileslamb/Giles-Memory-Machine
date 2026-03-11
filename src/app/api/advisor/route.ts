@@ -92,7 +92,7 @@ STALE ENTRIES (15+ days no update): ${staleEntries.length ? staleEntries.join(",
     const { text } = await generate({
       system: systemPrompt,
       messages: apiMessages,
-      maxTokens: 1024,
+      maxTokens: 2048,
     });
 
     return NextResponse.json({ reply: text.trim() });

@@ -1,7 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { apiUrl } from "@/lib/api";
 import type { ParsedEntry, ParsedLayer } from "@/lib/parse-context";
+
+function formatTimeAgo(timestamp: number): string {
+  const diffMs = Date.now() - timestamp;
+  const mins = Math.floor(diffMs / 60000);
+  const hours = Math.floor(diffMs / 3600000);
+  const days = Math.floor(diffMs / 86400000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min${mins === 1 ? "" : "s"} ago`;
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  if (days === 1) return "1 day ago";
+  if (days < 7) return `${days} days ago`;
+  if (days < 30) return `${Math.floor(days / 7)} weeks ago`;
+  if (days < 365) return `${Math.floor(days / 30)} months ago`;
+  return `${Math.floor(days / 365)} years ago`;
+}
 
 const LAYER_COLORS: Record<string, string> = {
   PROJECTS: "#4af0c8",
@@ -20,6 +36,7 @@ interface LeftPanelProps {
   onTodosClick: () => void;
   onEntryClick: (layer: string, name: string) => void;
   onSectionClick: (layer: string) => void;
+  activityRefreshTrigger?: number;
 }
 
 function getRecentEntries(layer: ParsedLayer, limit: number): ParsedEntry[] {
@@ -38,23 +55,26 @@ export function LeftPanel({
   onTodosClick,
   onEntryClick,
   onSectionClick,
+  activityRefreshTrigger = 0,
 }: LeftPanelProps) {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
-  const [activityExpanded, setActivityExpanded] = useState(false);
+  const [activityItems, setActivityItems] = useState<{ label: string; timestamp: number }[]>([]);
 
-  const activityItems = (() => {
-    if (!parsed?.layers) return [];
-    const flat = parsed.layers.flatMap((layer) =>
-      layer.entries.map((e) => ({ entry: e, layerName: layer.name }))
-    );
-    return flat
-      .filter(({ entry }) => entry.lastUpdated)
-      .sort((a, b) => (b.entry.lastUpdated!.getTime() - a.entry.lastUpdated!.getTime()));
-  })();
+  const fetchActivity = useCallback(async () => {
+    try {
+      const res = await fetch(apiUrl("/api/recent-activity"), { cache: "no-store" });
+      const data = await res.json();
+      if (data.items) setActivityItems(data.items);
+    } catch {
+      setActivityItems([]);
+    }
+  }, []);
 
-  const activityLimit = activityExpanded ? activityItems.length : 8;
-  const activityToShow = activityItems.slice(0, activityLimit);
-  const hasMoreActivity = activityItems.length > 8;
+  useEffect(() => {
+    fetchActivity();
+    const interval = setInterval(fetchActivity, 30000);
+    return () => clearInterval(interval);
+  }, [fetchActivity, activityRefreshTrigger]);
 
   const toggleSectionExpand = (key: string) => {
     setExpandedSections((prev) => {
@@ -176,7 +196,7 @@ export function LeftPanel({
         })}
       </div>
 
-      {/* Activity log — bottom, read-only */}
+      {/* Activity log — archive + Processed, refreshes every 30s */}
       <div
         className="shrink-0 border-t py-4 px-4"
         style={{ borderColor: "rgba(255,255,255,0.08)" }}
@@ -185,44 +205,14 @@ export function LeftPanel({
           RECENT ACTIVITY
         </div>
         <div className="space-y-2">
-          {activityToShow.length > 0 ? (
-            activityToShow.map(({ entry, layerName }) => {
-              const color = LAYER_COLORS[layerName] ?? "#737373";
-              const layerLabel = layerName === "VISION / IDEAS" ? "IDEAS" : layerName;
-              const dateStr = entry.lastUpdated
-                ? entry.lastUpdated.toLocaleDateString(undefined, {
-                    month: "short",
-                    day: "numeric",
-                  })
-                : "";
-              const timeStr = entry.lastUpdated
-                ? entry.lastUpdated.toLocaleTimeString(undefined, {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })
-                : "";
-              return (
-                <div key={`${layerName}-${entry.name}`} className="text-xs">
-                  <div className="text-[#a3a3a3] truncate">
-                    · {entry.name} — <span style={{ color }}>{layerLabel}</span>
-                  </div>
-                  <div className="text-[#525252] text-[10px] mt-0.5" style={{ paddingLeft: "1ch" }}>
-                    {dateStr} {timeStr}
-                  </div>
-                </div>
-              );
-            })
+          {activityItems.length > 0 ? (
+            activityItems.map((item, i) => (
+              <div key={`${item.label}-${item.timestamp}-${i}`} className="text-xs text-[#a3a3a3] truncate">
+                · {item.label} · {formatTimeAgo(item.timestamp)}
+              </div>
+            ))
           ) : (
             <div className="text-xs text-[#525252]">· No recent activity</div>
-          )}
-          {hasMoreActivity && (
-            <button
-              type="button"
-              onClick={() => setActivityExpanded(!activityExpanded)}
-              className="text-xs text-[#666666] hover:text-[#a3a3a3] mt-1"
-            >
-              {activityExpanded ? "· less ←" : "· more →"}
-            </button>
           )}
         </div>
       </div>

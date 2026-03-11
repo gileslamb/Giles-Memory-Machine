@@ -3,11 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { apiUrl } from "@/lib/api";
 
-const PARAGRAPH_PROMPT = `Give me a 3-4 sentence morning brief. Format with these exact section labels on their own line:
-Creative: [one observation — what's moving, what has momentum]
-Admin: [one flag — what needs attention]
-Today: [personal note + one specific action — energy, life, health from the Life layer]
-Use 2-3 short paragraphs. Warm and direct.`;
+const PARAGRAPH_PROMPT = `Give me a brief overview in 2-3 short paragraphs. No subheadings or labels — just flowing prose. Lead with the most pressing things first (urgent deadlines, overdue items, things that need attention). Then mention what's moving well and any lighter notes. Warm and direct.`;
 
 const EXPANDED_PROMPT = `Give me the full status: full signals analysis, all open todos with staleness, detailed project status across all layers, and strategic observations. Format with clear sections or bullet points. Use short paragraphs to separate ideas.`;
 
@@ -118,34 +114,17 @@ export function CoachZone({ hasContent, contentVersion, compact, entryContext, t
 
   if (!hasContent && !entryContext && !todosContext) return null;
 
-  const LAYER_COLORS: Record<string, string> = {
-    Creative: "#4af0c8",
-    Admin: "#f0a84a",
-    Today: "#f04a7a",
-  };
+  const showEmptyState = !paragraph && !isLoading && hasContent;
 
   function renderCoachText(text: string) {
-    const parts: React.ReactNode[] = [];
-    const lines = text.split("\n");
-    let key = 0;
-    for (const line of lines) {
-      const match = line.match(/^(Creative:|Admin:|Today:)\s*(.*)$/i);
-      if (match) {
-        const [, label, rest] = match;
-        const color = LAYER_COLORS[label as keyof typeof LAYER_COLORS] ?? "#e8e8e8";
-        parts.push(
-          <p key={key++} className="mb-2">
-            <span className="font-bold" style={{ color, fontSize: "1.05em" }}>{label} </span>
-            <span>{rest}</span>
-          </p>
-        );
-      } else if (line.trim()) {
-        parts.push(<p key={key++}>{line.trim()}</p>);
-      } else {
-        parts.push(<div key={key++} className="h-2" />);
-      }
-    }
-    return parts;
+    return text
+      .split(/\n\n+/)
+      .filter((p) => p.trim())
+      .map((para, i) => (
+        <p key={i} className="mb-2 last:mb-0">
+          {para.trim()}
+        </p>
+      ));
   }
 
   if (todosContext) {
@@ -164,6 +143,12 @@ export function CoachZone({ hasContent, contentVersion, compact, entryContext, t
           padding: "24px 48px",
         }}
       >
+        <h3
+          className="mb-2 font-medium uppercase"
+          style={{ color: "#666666", letterSpacing: "0.1em", fontSize: "0.75rem" }}
+        >
+          Coach Notes
+        </h3>
         <p style={{ color: "#f0ede8", fontSize: 16, lineHeight: 1.7 }}>{note}</p>
       </div>
     );
@@ -179,6 +164,12 @@ export function CoachZone({ hasContent, contentVersion, compact, entryContext, t
           padding: "24px 48px",
         }}
       >
+        <h3
+          className="mb-2 font-medium uppercase"
+          style={{ color: "#666666", letterSpacing: "0.1em", fontSize: "0.75rem" }}
+        >
+          Coach Notes
+        </h3>
         {entryCoachLoading ? (
           <span className="text-[#a3a3a3] animate-pulse" style={{ fontSize: 16 }}>thinking…</span>
         ) : entryCoach ? (
@@ -198,8 +189,16 @@ export function CoachZone({ hasContent, contentVersion, compact, entryContext, t
         paddingRight: 48,
       }}
     >
+      <h3
+        className="mb-2 font-medium uppercase"
+        style={{ color: "#666666", letterSpacing: "0.1em", fontSize: "0.75rem" }}
+      >
+        Coach Notes
+      </h3>
       {isLoading ? (
         <span className="text-[#a3a3a3] animate-pulse" style={{ fontSize: 16 }}>Loading…</span>
+      ) : showEmptyState ? (
+        <p style={{ color: "#737373", fontSize: 14 }}>Couldn&apos;t load coach notes. Check your API key in Settings, or try refreshing.</p>
       ) : paragraph ? (
         <>
           <div style={{ color: "#f0ede8", fontSize: 16, lineHeight: 1.7 }}>

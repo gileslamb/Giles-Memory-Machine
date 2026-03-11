@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { generate } from "@/lib/ai-client";
-import { readMasterFile, writeMasterFile } from "@/lib/file-system";
+import { readMasterFile, writeMasterFile, setNextArchivePreview } from "@/lib/file-system";
+import { preserveTodosInMerge } from "@/lib/parse-todos";
 import { SCHEMA_PROMPT } from "@/lib/schema";
 
 function getMergeSystemPrompt() {
@@ -16,7 +17,9 @@ MERGE RULES (critical):
 4. Keep the file clean, readable, and concise — summarise rather than dump raw text
 5. Structure each project/area entry: what it is, current status, key people, next steps, decisions made
 6. Preserve the four-layer structure (PROJECTS, ADMIN, VISION / IDEAS, LIFE) and their category headings
-7. Output ONLY the complete merged markdown file — no preamble, no explanation`;
+7. Output ONLY the complete merged markdown file — no preamble, no explanation
+
+CRITICAL — ## CURRENT TODOS: Never remove, replace, or truncate the existing ## CURRENT TODOS section. Preserve every existing todo line exactly. You may ADD new todos from the incoming content (format: - [ ] item · added ${today} · category. Do not duplicate. Do not remove any existing todos.`;
 }
 
 export async function POST(request: Request) {
@@ -84,6 +87,8 @@ ${pastedContent}
       );
     }
 
+    mergedContent = preserveTodosInMerge(currentContext, mergedContent);
+    setNextArchivePreview(pastedContent);
     await writeMasterFile(mergedContent);
 
     return NextResponse.json({

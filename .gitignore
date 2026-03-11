@@ -17,6 +17,9 @@
 # Data (created automatically on first run)
 /data
 
+# Inbox watcher logs (launchd)
+/logs
+
 # Misc
 .DS_Store
 *.pem

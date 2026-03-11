@@ -56,13 +56,23 @@ export async function startInboxWatcher(): Promise<void> {
 
   await ensureInboxStructure();
 
+  // Process all existing files immediately on startup (before watch starts)
+  const { processAllWaitingFiles } = await import("./inbox-processor");
+  const existing = await listFilesWaiting();
+  if (existing.length > 0) {
+    console.log(`[Memory Machine] Processing ${existing.length} existing inbox file(s) on startup…`);
+    const { processed, errors } = await processAllWaitingFiles();
+    if (processed > 0) console.log(`[Memory Machine] Processed ${processed} file(s) on startup`);
+    if (errors.length > 0) console.error(`[Memory Machine] Startup errors:`, errors);
+  }
+
   watcher = chokidar.watch(
     [
-      path.join(MEMORY_INBOX_PATH, INBOX_FOLDERS.DROP, "*"),
-      path.join(MEMORY_INBOX_PATH, INBOX_FOLDERS.PROJECTS, "*"),
-      path.join(MEMORY_INBOX_PATH, INBOX_FOLDERS.ADMIN, "*"),
-      path.join(MEMORY_INBOX_PATH, INBOX_FOLDERS.VISION, "*"),
-      path.join(MEMORY_INBOX_PATH, INBOX_FOLDERS.LIFE, "*"),
+      path.join(MEMORY_INBOX_PATH, INBOX_FOLDERS.DROP),
+      path.join(MEMORY_INBOX_PATH, INBOX_FOLDERS.PROJECTS),
+      path.join(MEMORY_INBOX_PATH, INBOX_FOLDERS.ADMIN),
+      path.join(MEMORY_INBOX_PATH, INBOX_FOLDERS.VISION),
+      path.join(MEMORY_INBOX_PATH, INBOX_FOLDERS.LIFE),
     ],
     {
       persistent: true,
@@ -88,15 +98,9 @@ export async function startInboxWatcher(): Promise<void> {
     await writeInboxStatus({ filesWaiting: count });
   });
 
-  // Process existing files on startup (chokidar ignoreInitial: true to avoid duplicates)
-  const existing = await listFilesWaiting();
-  for (const { filePath, sourceFolder } of existing) {
-    enqueue(filePath, sourceFolder);
-  }
-
   const count = await countFilesWaiting();
   await writeInboxStatus({ filesWaiting: count });
-  console.log(`[Memory Machine] Inbox watcher ready: ${MEMORY_INBOX_PATH} (${count} files queued)`);
+  console.log(`[Memory Machine] Inbox watcher ready: ${MEMORY_INBOX_PATH} (${count} files waiting)`);
 }
 
 export function stopInboxWatcher(): void {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { readMasterFileWithStats, writeMasterFile } from "@/lib/file-system";
+import { readMasterFileWithStats, writeMasterFile, setNextArchivePreview } from "@/lib/file-system";
 
 export async function GET() {
   try {
@@ -31,6 +31,7 @@ export async function PUT(request: Request) {
         { status: 400 }
       );
     }
+    setNextArchivePreview(content);
     await writeMasterFile(content);
     return NextResponse.json({ success: true });
   } catch (error) {

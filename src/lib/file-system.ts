@@ -96,6 +96,14 @@ export function getArchiveFilename(): string {
   return `AI_CONTEXT_${date}_${time}.md`;
 }
 
+let _nextArchivePreview: string | null = null;
+
+/** Set a short label for the next archive (e.g. filename or first words of input). Used by Recent Activity. */
+export function setNextArchivePreview(preview: string): void {
+  const trimmed = preview.trim().slice(0, 40);
+  _nextArchivePreview = trimmed ? trimmed.replace(/\s+/g, " ") : null;
+}
+
 export async function readMasterFile(): Promise<string> {
   const dir = await ensureDataDirectory();
   const filePath = path.join(dir, MASTER_FILE);
@@ -142,6 +150,12 @@ export async function writeMasterFile(content: string): Promise<void> {
 
   // Archive current state (silent, never lose anything)
   await fs.writeFile(archivePath, currentContent, "utf-8");
+
+  if (_nextArchivePreview) {
+    const previewPath = archivePath.replace(/\.md$/, ".preview");
+    await fs.writeFile(previewPath, _nextArchivePreview, "utf-8");
+    _nextArchivePreview = null;
+  }
 
   // Write new content
   await fs.writeFile(filePath, content, "utf-8");

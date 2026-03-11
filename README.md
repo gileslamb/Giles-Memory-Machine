@@ -36,6 +36,24 @@ npm run dev:remote
 
 Then open `http://<your-machine-ip>:3000` (e.g. `http://192.168.1.5:3000`). Find your IP with `ipconfig getifaddr en0` (Mac) or `hostname -I` (Linux).
 
+### Inbox watcher (standalone, runs at Mac login)
+
+The inbox watcher processes files dropped into `MEMORY_INBOX` (Projects, Admin, Vision, Life, 00_DROP_HERE). It runs as a **standalone process**, independent of the Next.js app.
+
+**Run manually:**
+```bash
+npm run inbox-watcher
+```
+
+**Run at Mac login (launchd):**
+```bash
+./scripts/install-inbox-watcher-launchd.sh
+```
+
+This installs a plist to `~/Library/LaunchAgents/` so the watcher starts automatically when you log in. Logs go to `./logs/inbox-watcher.log`. To stop: `launchctl stop com.gileslamb.memory-machine-inbox-watcher`.
+
+The dashboard has a **Process inbox now** button to scan and process all waiting files on demand.
+
 ### Deploy to Render
 
 1. Push the repo to GitHub

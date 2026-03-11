@@ -1,6 +1,6 @@
 /**
  * Next.js instrumentation — runs when server starts.
- * Starts the Memory Inbox folder watcher (Node.js only).
+ * Starts inbox watcher so files in MEMORY_INBOX get processed when the app runs.
  */
 
 export async function register() {

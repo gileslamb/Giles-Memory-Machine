@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { generate } from "@/lib/ai-client";
-import { readMasterFile, writeMasterFile } from "@/lib/file-system";
+import { readMasterFile, writeMasterFile, setNextArchivePreview } from "@/lib/file-system";
+import { preserveTodosInMerge } from "@/lib/parse-todos";
 import { SCHEMA_PROMPT } from "@/lib/schema";
 
 const REPLY = "Got it.";
@@ -22,7 +23,9 @@ MERGE RULES:
 3. Add "Last updated: [ISO date]" to any section that changes — use today (${today})
 4. Keep the file clean and concise — summarise, don't dump raw text
 5. Preserve the four-layer structure (PROJECTS, ADMIN, VISION / IDEAS, LIFE)
-6. Output a JSON object with one field: "mergedContent" — the complete merged markdown (no preamble, no code blocks)`;
+6. Output a JSON object with one field: "mergedContent" — the complete merged markdown (no preamble, no code blocks)
+
+CRITICAL — ## CURRENT TODOS: Never remove, replace, or truncate the existing ## CURRENT TODOS section. Preserve every existing todo line exactly. You may ADD new todos from the user's message. Do not remove any existing todos.`;
 
     const userContent = `Current AI_CONTEXT.md:
 
@@ -67,6 +70,8 @@ Output JSON with "mergedContent" only.`;
     const hasLife = /##\s*LIFE/i.test(merged);
     const minLen = Math.floor(currentContext.length * 0.25);
     if (hasProjects && hasAdmin && hasVision && hasLife && merged.length >= minLen) {
+      merged = preserveTodosInMerge(currentContext, merged);
+      setNextArchivePreview(text);
       await writeMasterFile(merged);
     }
   } catch (err) {

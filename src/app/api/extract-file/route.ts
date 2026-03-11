@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { generateWithImage } from "@/lib/ai-client";
-import { PDFParse } from "pdf-parse";
+import { extractTextFromPath } from "@/lib/extract-from-path";
+import fs from "fs/promises";
+import os from "os";
+import path from "path";
 
 export async function POST(request: Request) {
   try {
@@ -14,15 +17,13 @@ export async function POST(request: Request) {
 
     if (ext === "pdf") {
       const buffer = Buffer.from(await file.arrayBuffer());
-      const parser = new PDFParse({ data: buffer });
+      const tmp = path.join(os.tmpdir(), `pdf-${Date.now()}.pdf`);
+      await fs.writeFile(tmp, buffer);
       try {
-        const result = await parser.getText();
-        await parser.destroy();
-        const text = result.text?.trim() || "(No extractable text in PDF)";
-        return NextResponse.json({ text });
-      } catch (e) {
-        await parser.destroy();
-        throw e;
+        const text = await extractTextFromPath(tmp);
+        return NextResponse.json({ text: text || "(No extractable text in PDF)" });
+      } finally {
+        await fs.unlink(tmp).catch(() => {});
       }
     }
 

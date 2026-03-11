@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { generate } from "@/lib/ai-client";
 import { readMasterFile } from "@/lib/file-system";
+import { preserveTodosInMerge } from "@/lib/parse-todos";
 import { SCHEMA_PROMPT } from "@/lib/schema";
 
 /**
@@ -115,6 +116,8 @@ ${content}
         { status: 500 }
       );
     }
+
+    mergedContent = preserveTodosInMerge(currentContext, mergedContent);
 
     return NextResponse.json({
       success: true,

@@ -9,7 +9,7 @@ const STALE_DAYS = 14;
 interface StaleAlertProps {
   parsed: { layers: ParsedLayer[] } | null;
   openTodos: ParsedTodo[];
-  dismissedEntryName: string | null;
+  dismissedEntryNames: Set<string>;
   onDismiss: (entryName: string) => void;
   onArchive: () => void;
 }
@@ -23,13 +23,13 @@ function entryHasOpenTodos(entry: ParsedEntry, todos: ParsedTodo[]): boolean {
   });
 }
 
-export function StaleAlert({ parsed, openTodos, dismissedEntryName, onDismiss, onArchive }: StaleAlertProps) {
+export function StaleAlert({ parsed, openTodos, dismissedEntryNames, onDismiss, onArchive }: StaleAlertProps) {
   const staleEntry = (() => {
     if (!parsed?.layers) return null;
     const candidates: { entry: ParsedEntry; layer: ParsedLayer; score: number }[] = [];
     for (const layer of parsed.layers) {
       for (const entry of layer.entries) {
-        if (dismissedEntryName === entry.name) continue;
+        if (dismissedEntryNames.has(entry.name)) continue;
         const days = entry.daysSinceUpdate ?? 999;
         if (days < STALE_DAYS) continue;
         const hasTodos = entryHasOpenTodos(entry, openTodos);

@@ -3,12 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "ulimit -n 10240 2>/dev/null || true; next dev --hostname 127.0.0.1",
+    "dev": "ulimit -n 10240 2>/dev/null || true; next dev --hostname 127.0.0.1 -p 3000",
     "dev:remote": "next dev --hostname 0.0.0.0",
     "build": "next build",
-    "start": "next start -H 127.0.0.1",
+    "start": "next start -H 127.0.0.1 -p 3000",
+    "launch": "npm run build && npm run start",
     "lint": "next lint",
-    "print-paths": "node scripts/print-paths.mjs"
+    "print-paths": "node scripts/print-paths.mjs",
+    "inbox-watcher": "npx tsx scripts/run-inbox-watcher.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
@@ -21,6 +23,7 @@
     "pdfjs-dist": "^5.5.207",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "unpdf": "^1.4.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
@@ -32,6 +35,7 @@
     "eslint-config-next": "^15.1.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.15",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }
 }
