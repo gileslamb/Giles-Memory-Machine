@@ -14,6 +14,7 @@ import { processInboxFile, listFilesWaiting, countFilesWaiting } from "./inbox-p
 import { writeInboxStatus } from "./inbox-status";
 
 let watcher: ReturnType<typeof chokidar.watch> | null = null;
+let pollIntervalId: ReturnType<typeof setInterval> | null = null;
 const processing = new Set<string>();
 let queue: { filePath: string; sourceFolder: string }[] = [];
 let processingQueue = false;
@@ -56,15 +57,17 @@ export async function startInboxWatcher(): Promise<void> {
 
   await ensureInboxStructure();
 
-  // Process all existing files immediately on startup (before watch starts)
-  const { processAllWaitingFiles } = await import("./inbox-processor");
-  const existing = await listFilesWaiting();
-  if (existing.length > 0) {
-    console.log(`[Memory Machine] Processing ${existing.length} existing inbox file(s) on startup…`);
-    const { processed, errors } = await processAllWaitingFiles();
-    if (processed > 0) console.log(`[Memory Machine] Processed ${processed} file(s) on startup`);
-    if (errors.length > 0) console.error(`[Memory Machine] Startup errors:`, errors);
-  }
+  // Process existing files in background — don't block server startup
+  void (async () => {
+    const { processAllWaitingFiles } = await import("./inbox-processor");
+    const existing = await listFilesWaiting();
+    if (existing.length > 0) {
+      console.log(`[Memory Machine] Processing ${existing.length} existing inbox file(s) on startup…`);
+      const { processed, errors } = await processAllWaitingFiles();
+      if (processed > 0) console.log(`[Memory Machine] Processed ${processed} file(s) on startup`);
+      if (errors.length > 0) console.error(`[Memory Machine] Startup errors:`, errors);
+    }
+  })();
 
   watcher = chokidar.watch(
     [
@@ -77,7 +80,9 @@ export async function startInboxWatcher(): Promise<void> {
     {
       persistent: true,
       ignoreInitial: true,
-      awaitWriteFinish: { stabilityThreshold: 500 },
+      awaitWriteFinish: { stabilityThreshold: 2000 },
+      usePolling: true,
+      interval: 5000,
     }
   );
 
@@ -101,9 +106,27 @@ export async function startInboxWatcher(): Promise<void> {
   const count = await countFilesWaiting();
   await writeInboxStatus({ filesWaiting: count });
   console.log(`[Memory Machine] Inbox watcher ready: ${MEMORY_INBOX_PATH} (${count} files waiting)`);
+
+  // Periodic backup scan (every 2 min) — catches files chokidar may miss on Google Drive
+  pollIntervalId = setInterval(async () => {
+    if (!watcher) return;
+    const waiting = await listFilesWaiting();
+    if (waiting.length === 0) return;
+    for (const { filePath, sourceFolder } of waiting) {
+      if (processing.has(filePath)) continue;
+      enqueue(filePath, sourceFolder);
+    }
+  }, 120000);
+  if (typeof (pollIntervalId as NodeJS.Timeout).unref === "function") {
+    (pollIntervalId as NodeJS.Timeout).unref();
+  }
 }
 
 export function stopInboxWatcher(): void {
+  if (pollIntervalId) {
+    clearInterval(pollIntervalId);
+    pollIntervalId = null;
+  }
   if (watcher) {
     watcher.close();
     watcher = null;

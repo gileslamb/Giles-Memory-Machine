@@ -13,6 +13,8 @@ export default function Error({
     console.error("App error:", error);
   }, [error]);
 
+  const isChunkError = error?.message?.includes("ChunkLoadError") ?? false;
+
   return (
     <div
       style={{
@@ -29,20 +31,37 @@ export default function Error({
       <p style={{ color: "#a3a3a3", marginBottom: "1.5rem" }}>
         {error instanceof Error ? error.message : String(error)}
       </p>
-      <button
-        type="button"
-        onClick={reset}
-        style={{
-          padding: "0.5rem 1rem",
-          backgroundColor: "#262626",
-          color: "#e5e5e5",
-          border: "1px solid #262626",
-          borderRadius: "0.5rem",
-          cursor: "pointer",
-        }}
-      >
-        Try again
-      </button>
+      <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+        {isChunkError && (
+          <a
+            href="/reset"
+            style={{
+              padding: "0.5rem 1rem",
+              backgroundColor: "#4af0c8",
+              color: "#0a0a0a",
+              borderRadius: "0.5rem",
+              textDecoration: "none",
+              fontWeight: 500,
+            }}
+          >
+            Clear cache & reload
+          </a>
+        )}
+        <button
+          type="button"
+          onClick={reset}
+          style={{
+            padding: "0.5rem 1rem",
+            backgroundColor: "#262626",
+            color: "#e5e5e5",
+            border: "1px solid #404040",
+            borderRadius: "0.5rem",
+            cursor: "pointer",
+          }}
+        >
+          Try again
+        </button>
+      </div>
     </div>
   );
 }

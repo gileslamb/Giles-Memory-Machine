@@ -46,6 +46,9 @@ export default function Home() {
   const [isAddingTodo, setIsAddingTodo] = useState(false);
   const [isProcessingInbox, setIsProcessingInbox] = useState(false);
   const [activityRefreshTrigger, setActivityRefreshTrigger] = useState(0);
+  const [completingIds, setCompletingIds] = useState<Set<string>>(new Set());
+  const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
+  const [editTodoText, setEditTodoText] = useState("");
 
   const parsed = useMemo(() => {
     try {
@@ -226,6 +229,15 @@ export default function Home() {
             }
           : t
       );
+      setTodos(updated);
+      if (newStatus === "done") {
+        setCompletingIds((prev) => new Set(prev).add(todo.id));
+        setTimeout(() => setCompletingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(todo.id);
+          return next;
+        }), 1500);
+      }
       try {
         const res = await fetch(apiUrl("/api/context/todos"), {
           method: "PATCH",
@@ -237,7 +249,33 @@ export default function Home() {
           fetchContent();
         }
       } catch {
-        // Could show toast
+        setTodos(todos);
+      }
+    },
+    [todos, fetchTodos, fetchContent]
+  );
+
+  const handleTodoEdit = useCallback(
+    async (todo: ParsedTodo, newText: string) => {
+      setEditingTodoId(null);
+      const trimmed = newText.trim();
+      if (!trimmed || trimmed === todo.text) return;
+      const updated = todos.map((t) =>
+        t.id === todo.id ? { ...t, text: trimmed } : t
+      );
+      setTodos(updated);
+      try {
+        const res = await fetch(apiUrl("/api/context/todos"), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ todos: updated }),
+        });
+        if (res.ok) {
+          fetchTodos();
+          fetchContent();
+        }
+      } catch {
+        setTodos(todos);
       }
     },
     [todos, fetchTodos, fetchContent]
@@ -337,18 +375,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* Coach Notes — below chat, above todos */}
-        {activeView === "chat" && (
-          <CoachZone
-            hasContent={!!content?.trim()}
-            contentVersion={lastModified ? new Date(lastModified).getTime() : content.length}
-            compact={false}
-            entryContext={null}
-            todosContext={null}
-          />
-        )}
-
-        {/* Todos — below coach */}
+        {/* Todos — below chat */}
         {activeView === "chat" && (
           <div className="shrink-0 border-b py-4 px-6" style={{ backgroundColor: "#0a0a0a", borderColor: "rgba(255,255,255,0.06)" }}>
             <h3 className="mb-3 font-medium uppercase" style={{ color: "#666666", letterSpacing: "0.1em", fontSize: "0.75rem" }}>
@@ -356,8 +383,17 @@ export default function Home() {
             </h3>
             <div className="flex flex-col gap-2 mb-3">
               {(() => {
-                const open = todos.filter((t) => t.status !== "done");
-                if (open.length === 0) {
+                const today = new Date().toISOString().slice(0, 10);
+                const open = todos.filter(
+                  (t) => t.status !== "done" || (t.status === "done" && completingIds.has(t.id))
+                );
+                const recentlyComplete = todos.filter(
+                  (t) =>
+                    t.status === "done" &&
+                    t.dateCompleted === today &&
+                    !completingIds.has(t.id)
+                );
+                if (open.length === 0 && recentlyComplete.length === 0) {
                   return <p className="text-sm text-[#525252]">No todos yet. Add one below.</p>;
                 }
                 const sorted = [...open]
@@ -370,20 +406,118 @@ export default function Home() {
                     return daysB - daysA;
                   })
                   .slice(0, HOME_TODOS_LIMIT);
-                return sorted.map((t) => (
-                  <div key={t.id} className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => handleTodoToggle(t)}
-                      className="shrink-0 inline-flex h-4 w-4 items-center justify-center rounded-sm border cursor-pointer hover:border-[#525252]"
-                      style={{ borderColor: "#333333", backgroundColor: t.status === "done" ? "#4af0c8" : "transparent" }}
-                    >
-                      {t.status === "done" ? <span style={{ color: "#0a0a0a", fontSize: 10 }}>✓</span> : null}
-                    </button>
-                    <span style={{ color: "#e8e8e8", fontSize: 14 }}>{t.text}</span>
-                    {t.category && <span style={{ color: "#737373", fontSize: 12 }}>· {t.category}</span>}
-                  </div>
-                ));
+                return (
+                  <>
+                    {sorted.map((t) => {
+                      const isChecked = t.status === "done" || completingIds.has(t.id);
+                      const isEditing = editingTodoId === t.id;
+                      return (
+                        <div key={t.id} className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => handleTodoToggle(t)}
+                            className="shrink-0 inline-flex h-4 w-4 items-center justify-center rounded-sm border cursor-pointer hover:border-[#525252] transition-colors"
+                            style={{
+                              borderColor: "#333333",
+                              backgroundColor: isChecked ? "#4af0c8" : "transparent",
+                            }}
+                          >
+                            {isChecked ? <span style={{ color: "#0a0a0a", fontSize: 10 }}>✓</span> : null}
+                          </button>
+                          {isEditing ? (
+                            <input
+                              type="text"
+                              value={editTodoText}
+                              onChange={(e) => setEditTodoText(e.target.value)}
+                              onBlur={() => handleTodoEdit(t, editTodoText)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") handleTodoEdit(t, editTodoText);
+                                if (e.key === "Escape") {
+                                  setEditingTodoId(null);
+                                  setEditTodoText("");
+                                }
+                              }}
+                              autoFocus
+                              className="flex-1 min-w-0 px-2 py-1 text-sm bg-[#111111] border rounded text-[#e8e8e8] focus:outline-none focus:ring-1"
+                              style={{ borderColor: "rgba(255,255,255,0.2)" }}
+                            />
+                          ) : (
+                            <span
+                              onClick={() => {
+                                setEditingTodoId(t.id);
+                                setEditTodoText(t.text);
+                              }}
+                              style={{
+                                color: isChecked ? "#737373" : "#e8e8e8",
+                                fontSize: 14,
+                                textDecoration: isChecked ? "line-through" : "none",
+                                cursor: "pointer",
+                              }}
+                              className="hover:underline"
+                            >
+                              {t.text}
+                            </span>
+                          )}
+                          {t.category && !isEditing && (
+                            <span style={{ color: "#737373", fontSize: 12 }}>· {t.category}</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {recentlyComplete.length > 0 && (
+                      <div className="mt-3 pt-3 border-t" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
+                        <div className="text-xs text-[#525252] mb-2 uppercase tracking-wide">Recently complete</div>
+                        {recentlyComplete.map((t) => {
+                          const isEditing = editingTodoId === t.id;
+                          return (
+                            <div key={t.id} className="flex items-center gap-3 py-1">
+                              <button
+                                type="button"
+                                onClick={() => handleTodoToggle(t)}
+                                className="shrink-0 inline-flex h-4 w-4 items-center justify-center rounded-sm border cursor-pointer hover:border-[#525252]"
+                                style={{ borderColor: "#333333", backgroundColor: "#4af0c8" }}
+                              >
+                                <span style={{ color: "#0a0a0a", fontSize: 10 }}>✓</span>
+                              </button>
+                              {isEditing ? (
+                                <input
+                                  type="text"
+                                  value={editTodoText}
+                                  onChange={(e) => setEditTodoText(e.target.value)}
+                                  onBlur={() => handleTodoEdit(t, editTodoText)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") handleTodoEdit(t, editTodoText);
+                                    if (e.key === "Escape") {
+                                      setEditingTodoId(null);
+                                      setEditTodoText("");
+                                    }
+                                  }}
+                                  autoFocus
+                                  className="flex-1 min-w-0 px-2 py-1 text-sm bg-[#111111] border rounded text-[#e8e8e8] focus:outline-none focus:ring-1"
+                                  style={{ borderColor: "rgba(255,255,255,0.2)" }}
+                                />
+                              ) : (
+                                <span
+                                  onClick={() => {
+                                    setEditingTodoId(t.id);
+                                    setEditTodoText(t.text);
+                                  }}
+                                  style={{ color: "#737373", fontSize: 14, textDecoration: "line-through", cursor: "pointer" }}
+                                  className="hover:underline"
+                                >
+                                  {t.text}
+                                </span>
+                              )}
+                              {t.category && !isEditing && (
+                                <span style={{ color: "#525252", fontSize: 12 }}>· {t.category}</span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                );
               })()}
             </div>
             <div className="flex gap-2">
@@ -410,6 +544,19 @@ export default function Home() {
                 View all {todos.filter((t) => t.status !== "done").length} todos →
               </button>
             )}
+          </div>
+        )}
+
+        {/* Coach Notes — below todos on chat view */}
+        {activeView === "chat" && (
+          <div className="shrink-0">
+            <CoachZone
+              hasContent={!!content?.trim()}
+              contentVersion={lastModified ? new Date(lastModified).getTime() : content.length}
+              compact={false}
+              entryContext={null}
+              todosContext={null}
+            />
           </div>
         )}
 
